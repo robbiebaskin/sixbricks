@@ -637,8 +637,10 @@ async function deliverPdf(doc, fname){
 }
 
 async function createInvoice(){
+  if(!qty.some(v=>v>0)){ toast("Add at least one product first"); return; }
+  ensureSyncKey();
+  await guardCounter();
   const o=snapshotFromForm();
-  if(o.items.length===0){ toast("Add at least one product first"); return; }
   store.orders.push(o);
   store.queue=store.queue||[];
   store.queue.push({uid:APP_ID+"-"+o.no+"-"+Date.now(), app:APP_ID, no:o.no, date:o.date,
@@ -650,44 +652,47 @@ async function createInvoice(){
   $("invNo").textContent=invLabel(invoiceNo);
   renderHistory();
   openViewer(buildPdf(o), `SixBricks_Invoice_${issuedNo}.pdf`, issuedNo);
-  ensureSyncKey();
   flushQueue();
   toast("Invoice "+invLabel(issuedNo)+" created — tap Download to save or share it");
 }
 
 /* ================= history ================= */
 function renderHistory(){
-  const host=$("histList");
-  if(!store||store.orders.length===0){
-    host.innerHTML='<div class="empty">No saved orders yet. Each PDF you create is saved here automatically.</div>';
-    return;
-  }
-  host.innerHTML="";
-  [...store.orders].reverse().forEach(o=>{
-    const div=document.createElement("div"); div.className="hist-item";
-    const who=(o.customer&&(o.customer.name||o.customer.company))||"No name";
-    const total=o.totals?o.totals.total:(o.total||0);
-    div.innerHTML=`
-      <div class="meta"><b>${invLabel(o.no)}</b> · ${who}
-        <div>${fmtDateAU(o.date)} · ${o.items.length} line item${o.items.length>1?"s":""} · ${fmt.format(total)}</div>
-      </div>
-      <div class="hbtns">
-        <button type="button" data-a="view" data-n="${o.no}">View</button>
-        <button type="button" data-a="dl" data-n="${o.no}">Download</button>
-        <button type="button" data-a="load" data-n="${o.no}">Load</button>
-        <button type="button" data-a="del" data-n="${o.no}" style="color:var(--red)">Delete</button>
-      </div>`;
-    host.appendChild(div);
-  });
-  host.querySelectorAll("button").forEach(b=>{
-    b.addEventListener("click",()=>{
-      const n=parseInt(b.dataset.n,10);
-      if(b.dataset.a==="view") viewOrder(n);
-      else if(b.dataset.a==="dl") downloadOrder(n);
-      else if(b.dataset.a==="load") loadOrder(n);
-      else deleteOrder(n);
+  const host=$("histList"); if(!store) return;
+  if(store.orders.length===0){
+    host.innerHTML='<div class="empty">No saved orders on this iPad. New or wiped device? Restore your history and invoice counter from the Google Sheet below.</div>';
+  }else{
+    host.innerHTML="";
+    [...store.orders].reverse().forEach(o=>{
+      const div=document.createElement("div"); div.className="hist-item";
+      const who=(o.customer&&(o.customer.name||o.customer.company))||"No name";
+      const total=o.totals?o.totals.total:(o.total||0);
+      div.innerHTML=`
+        <div class="meta"><b>${invLabel(o.no)}</b> · ${who}
+          <div>${fmtDateAU(o.date)} · ${o.items.length} line item${o.items.length>1?"s":""} · ${fmt.format(total)}</div>
+        </div>
+        <div class="hbtns">
+          <button type="button" data-a="view" data-n="${o.no}">View</button>
+          <button type="button" data-a="dl" data-n="${o.no}">Download</button>
+          <button type="button" data-a="load" data-n="${o.no}">Load</button>
+          <button type="button" data-a="del" data-n="${o.no}" style="color:var(--red)">Delete</button>
+        </div>`;
+      host.appendChild(div);
     });
-  });
+    host.querySelectorAll(".hbtns button").forEach(b=>{
+      b.addEventListener("click",()=>{
+        const n=parseInt(b.dataset.n,10);
+        if(b.dataset.a==="view") viewOrder(n);
+        else if(b.dataset.a==="dl") downloadOrder(n);
+        else if(b.dataset.a==="load") loadOrder(n);
+        else deleteOrder(n);
+      });
+    });
+  }
+  const ra=document.createElement("div"); ra.className="actions";
+  ra.innerHTML='<button class="btn btn-ghost" type="button" id="btnRestore">Restore from Google Sheet</button>';
+  host.appendChild(ra);
+  ra.querySelector("#btnRestore").addEventListener("click",restoreFromSheet);
 }
 function orderDoc(n){
   const o=store.orders.find(x=>x.no===n); if(!o) return null;
@@ -878,6 +883,47 @@ function renderSyncStatus(){
   const q=(store.queue||[]).length;
   if(!getSyncKey()){ el.textContent="Sheet sync: key not set — you'll be asked on the next invoice."; return; }
   el.textContent = q ? "Sheet sync: "+q+" invoice"+(q>1?"s":"")+" waiting to send." : "Sheet sync: up to date.";
+}
+let counterChecked=false;
+async function guardCounter(){
+  /* fresh store (wiped device / private mode): check the sheet before issuing #10001 again */
+  if(counterChecked) return;
+  counterChecked=true;
+  if(store.orders.length>0 || invoiceNo>START_NO) return;
+  const key=getSyncKey(); if(!key) return;
+  try{
+    const res=await fetch(SYNC_URL+"?k="+encodeURIComponent(key)+"&app="+APP_ID+"&counter=1");
+    const d=await res.json();
+    if(d && d.counter && d.counter>=START_NO){
+      store.counter=d.counter+1; invoiceNo=store.counter;
+      $("invNo").textContent=invLabel(invoiceNo);
+      await saveStore();
+      toast("Invoice numbering resumed from the Google Sheet at "+invLabel(invoiceNo));
+    }
+  }catch(e){ /* offline — local counter stands */ }
+}
+async function restoreFromSheet(){
+  const key=ensureSyncKey(); if(!key){ toast("Sync key needed to restore"); return; }
+  toast("Restoring from Google Sheet…");
+  try{
+    const res=await fetch(SYNC_URL+"?k="+encodeURIComponent(key)+"&app="+APP_ID);
+    const d=await res.json();
+    if(d.error){ toast("Restore denied — check the sync key"); return; }
+    const restored=(d.orders||[]).map(o=>({
+      no:parseInt(String(o.no).replace(/[^0-9]/g,""),10)||o.no,
+      date:o.date, customer:o.customer||{}, items:o.items||[], totals:o.totals||{}
+    }));
+    const have=new Set(restored.map(o=>o.no));
+    store.orders.forEach(o=>{ if(!have.has(o.no)) restored.push(o); });   // keep local-only orders
+    restored.sort((a,b)=>a.no-b.no);
+    store.orders=restored;
+    store.counter=Math.max(store.counter,(d.counter||0)+1,START_NO);
+    await saveStore();
+    invoiceNo=store.counter;
+    $("invNo").textContent=invLabel(invoiceNo);
+    renderHistory(); renderSyncStatus();
+    toast("Restored "+restored.length+" invoice"+(restored.length===1?"":"s")+" — next number "+invLabel(invoiceNo));
+  }catch(e){ toast("Restore failed — check the connection and key"); }
 }
 
 /* ================= init ================= */
