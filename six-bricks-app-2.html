@@ -1,0 +1,628 @@
+<!DOCTYPE html>
+<html lang="en-AU">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<title>Six Bricks Learning — Order Form</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Baloo+2:wght@600;700&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
+<style>
+  :root{
+    --ink:#1d2b3a;
+    --muted:#5f7186;
+    --paper:#f6f8fa;
+    --card:#ffffff;
+    --line:#dde5ec;
+    --blue:#1f96c9;
+    --blue-dark:#177aa5;
+    --red:#e4432e;
+    --yellow:#f5b921;
+    --green:#4caf50;
+    --radius:14px;
+  }
+  *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+  html{font-size:16px}
+  body{
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
+    background:var(--paper);color:var(--ink);
+    padding-bottom:120px; /* room for sticky summary bar */
+  }
+  .wrap{max-width:820px;margin:0 auto;padding:0 16px}
+
+  /* ---------- header ---------- */
+  header{background:#fff;border-bottom:1px solid var(--line);padding:18px 0 14px;margin-bottom:20px}
+  .brand{display:flex;align-items:center;justify-content:space-between;gap:12px}
+  .brand h1{
+    font-family:"Baloo 2",-apple-system,sans-serif;
+    font-weight:700;font-size:1.5rem;letter-spacing:.2px;line-height:1.1;
+  }
+  .brand .sub{color:var(--muted);font-size:.8rem;margin-top:2px}
+  .studs{display:flex;gap:5px;margin-top:8px}
+  .studs span{width:22px;height:10px;border-radius:5px}
+  .studs span:nth-child(1){background:var(--red)}
+  .studs span:nth-child(2){background:var(--yellow)}
+  .studs span:nth-child(3){background:var(--green)}
+  .studs span:nth-child(4){background:var(--blue)}
+  .inv-badge{text-align:right;font-size:.85rem;color:var(--muted)}
+  .inv-badge b{display:block;font-size:1.05rem;color:var(--ink);font-variant-numeric:tabular-nums}
+
+  /* ---------- cards & sections ---------- */
+  .card{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);padding:18px;margin-bottom:18px}
+  .card h2{
+    font-family:"Baloo 2",-apple-system,sans-serif;font-weight:700;font-size:1.05rem;
+    display:flex;align-items:center;gap:10px;margin-bottom:14px
+  }
+  .card h2 .dot{width:12px;height:12px;border-radius:4px;flex:none}
+
+  /* ---------- customer form ---------- */
+  .grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+  .field{display:flex;flex-direction:column;gap:5px}
+  .field.full{grid-column:1/-1}
+  label{font-size:.78rem;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.04em}
+  input[type=text],input[type=tel],input[type=email],input[type=date],input[type=number],textarea{
+    font:inherit;padding:12px 12px;border:1px solid var(--line);border-radius:10px;background:#fff;color:var(--ink);
+    min-height:46px;width:100%;
+  }
+  input:focus,textarea:focus{outline:2px solid var(--blue);outline-offset:1px;border-color:var(--blue)}
+  .seg{display:flex;border:1px solid var(--line);border-radius:10px;overflow:hidden}
+  .seg button{
+    flex:1;font:inherit;font-weight:600;font-size:.9rem;padding:12px 8px;background:#fff;color:var(--muted);
+    border:none;min-height:46px;cursor:pointer
+  }
+  .seg button.on{background:var(--blue);color:#fff}
+
+  /* ---------- products ---------- */
+  .cat{margin-bottom:6px}
+  .cat-head{
+    display:flex;align-items:center;gap:10px;padding:14px 4px 8px;
+    font-family:"Baloo 2",-apple-system,sans-serif;font-weight:700;font-size:.95rem
+  }
+  .cat-head .dot{width:12px;height:12px;border-radius:4px}
+  .row{
+    display:flex;flex-wrap:wrap;gap:6px 12px;align-items:center;
+    padding:12px 4px;border-top:1px solid var(--line);
+  }
+  .row .pinfo{flex:1 1 250px;min-width:200px}
+  .row .pname{font-weight:600;font-size:.95rem;line-height:1.25}
+  .row .punit{color:var(--muted);font-size:.8rem;margin-top:2px;font-variant-numeric:tabular-nums}
+  .row .controls{display:flex;align-items:center;gap:8px;margin-left:auto}
+  .stepper{display:flex;align-items:center;border:1px solid var(--line);border-radius:10px;overflow:hidden;background:#fff}
+  .stepper button{
+    width:38px;height:44px;border:none;background:#fff;font-size:1.3rem;font-weight:600;color:var(--blue-dark);cursor:pointer
+  }
+  .stepper button:active{background:#eaf5fb}
+  .stepper .qv{width:30px;text-align:center;font-weight:700;font-variant-numeric:tabular-nums;font-size:1rem}
+  .ts{display:flex;border:1px solid var(--line);border-radius:10px;overflow:hidden}
+  .ts button{width:34px;height:44px;border:none;background:#fff;color:var(--muted);font-weight:700;font-size:.8rem;cursor:pointer}
+  .ts button.on{background:var(--ink);color:#fff}
+  .ltotal{min-width:72px;text-align:right;font-weight:700;font-variant-numeric:tabular-nums;font-size:.9rem}
+  .row.hasqty{background:#f3fafd;border-radius:10px;border-top-color:transparent;margin-top:-1px}
+  .row.hasqty .pname{color:var(--blue-dark)}
+
+  /* ---------- charges ---------- */
+  .charges .grid{grid-template-columns:1fr 1fr}
+  .money-input{position:relative}
+  .money-input span{position:absolute;left:12px;top:50%;transform:translateY(-50%);color:var(--muted)}
+  .money-input input{padding-left:26px;text-align:right;font-variant-numeric:tabular-nums}
+
+  /* ---------- sticky summary ---------- */
+  .bar{
+    position:fixed;left:0;right:0;bottom:0;z-index:50;
+    background:#fff;border-top:2px solid var(--blue);
+    padding:10px 16px calc(10px + env(safe-area-inset-bottom));
+    box-shadow:0 -6px 20px rgba(29,43,58,.08)
+  }
+  .bar-inner{max-width:820px;margin:0 auto;display:flex;align-items:center;gap:14px}
+  .totals{flex:1;display:flex;gap:18px;align-items:baseline;flex-wrap:wrap}
+  .totals .t label{font-size:.68rem}
+  .totals .t div{font-weight:700;font-variant-numeric:tabular-nums;font-size:1rem}
+  .totals .t.big div{font-size:1.35rem;color:var(--blue-dark)}
+  .btn{
+    font:inherit;font-weight:700;border:none;border-radius:12px;cursor:pointer;
+    padding:0 20px;min-height:50px;font-size:1rem
+  }
+  .btn-primary{background:var(--blue);color:#fff}
+  .btn-primary:active{background:var(--blue-dark)}
+  .btn-ghost{background:#fff;color:var(--ink);border:1px solid var(--line)}
+  .btn-danger-ghost{background:#fff;color:var(--red);border:1px solid var(--line)}
+  .actions{display:flex;gap:10px;margin-top:4px;flex-wrap:wrap}
+  .actions .btn{flex:1;min-width:140px}
+
+  /* ---------- history ---------- */
+  .hist-item{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:12px 4px;border-top:1px solid var(--line)}
+  .hist-item:first-of-type{border-top:none}
+  .hist-item .meta b{font-variant-numeric:tabular-nums}
+  .hist-item .meta div{color:var(--muted);font-size:.82rem}
+  .hist-item .hbtns{display:flex;gap:8px}
+  .hist-item .hbtns button{font:inherit;font-weight:600;font-size:.85rem;border-radius:9px;padding:9px 13px;min-height:40px;cursor:pointer;border:1px solid var(--line);background:#fff}
+  .empty{color:var(--muted);font-size:.9rem;padding:8px 4px}
+  .note{color:var(--muted);font-size:.8rem;margin-top:10px}
+  .toast{
+    position:fixed;left:50%;transform:translateX(-50%);bottom:110px;z-index:99;
+    background:var(--ink);color:#fff;padding:12px 18px;border-radius:12px;font-size:.9rem;
+    opacity:0;pointer-events:none;transition:opacity .25s
+  }
+  .toast.show{opacity:1}
+  @media (max-width:560px){
+    .grid{grid-template-columns:1fr}
+    .totals .t:not(.big){display:none}
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="wrap brand">
+    <div>
+      <h1>Six Bricks Learning</h1>
+      <div class="sub">The Focus Learning Group Pty Ltd · ABN 55 128 613 427</div>
+      <div class="studs"><span></span><span></span><span></span><span></span></div>
+    </div>
+    <div class="inv-badge"><span id="appLabel">Tax Invoice</span><b id="invNo">#10001</b></div>
+  </div>
+</header>
+
+<main class="wrap">
+
+  <!-- Customer -->
+  <section class="card">
+    <h2><span class="dot" style="background:var(--red)"></span>Customer details</h2>
+    <div class="grid">
+      <div class="field"><label for="cName">Name</label><input type="text" id="cName" autocomplete="off"></div>
+      <div class="field"><label for="cPhone">Phone</label><input type="tel" id="cPhone" autocomplete="off"></div>
+      <div class="field"><label for="cEmail">Email</label><input type="email" id="cEmail" autocomplete="off" autocapitalize="none"></div>
+      <div class="field"><label for="cCompany">Company</label><input type="text" id="cCompany" autocomplete="off"></div>
+      <div class="field full"><label for="cAddress">Shipping address</label><input type="text" id="cAddress" autocomplete="off"></div>
+      <div class="field"><label>Payment method</label>
+        <div class="seg" id="paySeg">
+          <button type="button" data-v="Bank Transfer">Bank transfer</button>
+          <button type="button" data-v="Credit Card">Credit card</button>
+        </div>
+      </div>
+      <div class="field"><label for="cDate">Date</label><input type="date" id="cDate"></div>
+    </div>
+  </section>
+
+  <!-- Products -->
+  <section class="card">
+    <h2><span class="dot" style="background:var(--yellow)"></span>Products</h2>
+    <div id="productList"></div>
+  </section>
+
+  <!-- Charges -->
+  <section class="card charges">
+    <h2><span class="dot" style="background:var(--green)"></span>Shipping &amp; discount</h2>
+    <div class="grid">
+      <div class="field"><label for="shipping">Shipping (AUD)</label>
+        <div class="money-input"><span>$</span><input type="number" id="shipping" inputmode="decimal" min="0" step="0.01" placeholder="0.00"></div>
+      </div>
+      <div class="field"><label for="discount">Discount (AUD)</label>
+        <div class="money-input"><span>$</span><input type="number" id="discount" inputmode="decimal" min="0" step="0.01" placeholder="0.00"></div>
+      </div>
+    </div>
+    <div class="actions">
+      <button class="btn btn-primary" id="btnPdf" type="button">Create PDF invoice</button>
+      <button class="btn btn-ghost" id="btnNew" type="button">Start new order</button>
+    </div>
+    <div class="note">Prices include GST. GST shown is 1/11 of the invoice total. The PDF downloads to Files on your iPad (Downloads folder in Safari).</div>
+  </section>
+
+  <!-- History -->
+  <section class="card">
+    <h2><span class="dot" style="background:var(--blue)"></span>Saved orders</h2>
+    <div id="histList"><div class="empty">No saved orders yet. Each PDF you create is saved here automatically.</div></div>
+  </section>
+
+</main>
+
+<!-- Sticky summary -->
+<div class="bar">
+  <div class="bar-inner">
+    <div class="totals">
+      <div class="t"><label>Subtotal</label><div id="tSub">$0.00</div></div>
+      <div class="t"><label>GST incl.</label><div id="tGst">$0.00</div></div>
+      <div class="t big"><label>Total</label><div id="tTotal">$0.00</div></div>
+    </div>
+    <button class="btn btn-primary" id="btnPdf2" type="button">Create PDF</button>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+"use strict";
+
+/* ================= data ================= */
+const CATEGORIES = [
+  { name:"Story Kits", color:"#e4432e", items:[
+    ["Kitto, the Bravest Kitten Kit",85],
+    ["Cracker, the Lonely Crocodile Kit",85],
+    ["Diggy, the Helpful Dog Kit",85],
+    ["Jambo, the Joyful Giraffe Kit",85],
+    ["Dimples, the Littlest Dinosaur Kit",85],
+  ]},
+  { name:"Story Books", color:"#f5b921", items:[
+    ["Kitto, the Bravest Kitten (Book)",25],
+    ["Cracker, the Lonely Crocodile (Book)",25],
+    ["Diggy, the Helpful Dog (Book)",25],
+    ["Dimples, the Littlest Dinosaur (Book)",25],
+    ["Jambo, the Joyful Giraffe (Book)",25],
+  ]},
+  { name:"Centre Kits", color:"#4caf50", items:[
+    ["Family Day Care Kit",175],
+    ["Early Day Centre Kit",475],
+  ]},
+  { name:"Mats & Accessories", color:"#1f96c9", items:[
+    ["Six Bricks Activity Floor Mat",125],
+    ["Magnetic Bricks",75],
+    ["A1 Double Sided Laminated Activity Mat",35],
+    ["A4 8 Double Sided Laminated Activity Mats",40],
+    ["New Fun and Games Movement Mats (4 sets)",95],
+    ["New Fun and Games Movement Mats (6 sets)",125],
+  ]},
+  { name:"Activity Booklets", color:"#e4432e", items:[
+    ["Fun and Games",35],
+    ["STEAM Activities",35],
+    ["Friends and Family",35],
+    ["The World Around Us",35],
+    ["Let's Get Started",35],
+    ["Six Bricks Activities",35],
+    ["Neurodiversity Builders",35],
+  ]},
+  { name:"Training", color:"#f5b921", items:[
+    ["Six Bricks Online Training (Individual Modules)",95],
+    ["Six Bricks Accreditation",250],
+  ]},
+];
+
+const PRODUCTS = [];
+CATEGORIES.forEach(c => c.items.forEach(([name,price]) => PRODUCTS.push({name, price, cat:c.name})));
+
+const COMPANY = {
+  legal:"The Focus Learning Group Pty Ltd",
+  abn:"ABN 55 128 613 427",
+  brand:"Six Bricks Learning",
+  bankLines:[
+    "Payment options: Credit Card or Bank Transfer.",
+    "BANK: National Australia Bank | The Focus Learning Group PTY LTD",
+    "BSB: 082-001  Acc: 825121595"
+  ]
+};
+
+/* ================= state ================= */
+let qty    = new Array(PRODUCTS.length).fill(0);
+let fulfil = new Array(PRODUCTS.length).fill("");   // "", "T", "S"
+const APP_ID = 2;                 // this app's ID — invoices start with this digit
+const START_NO = APP_ID*10000+1;  // app 1 → 10001…, app 2 → 20001…
+let payMethod = "";
+let invoiceNo = START_NO;
+let store = null;          // {counter, orders:[]}
+const STORAGE_KEY = "sixbricks-orders-app"+APP_ID;
+const fmt = new Intl.NumberFormat("en-AU",{style:"currency",currency:"AUD"});
+
+/* ================= helpers ================= */
+const $ = id => document.getElementById(id);
+function toast(msg){
+  const t=$("toast"); t.textContent=msg; t.classList.add("show");
+  clearTimeout(t._h); t._h=setTimeout(()=>t.classList.remove("show"),2200);
+}
+function num(v){ const n=parseFloat(v); return isFinite(n)&&n>0?n:0; }
+function todayISO(){
+  const d=new Date(), p=x=>String(x).padStart(2,"0");
+  return `${d.getFullYear()}-${p(d.getMonth()+1)}-${p(d.getDate())}`;
+}
+function fmtDateAU(iso){
+  if(!iso) return "";
+  const [y,m,d]=iso.split("-"); return `${d}/${m}/${y}`;
+}
+function invLabel(n){ return "#"+n; }
+
+/* ================= storage (best-effort) ================= */
+async function loadStore(){
+  let raw=null;
+  try{
+    if(typeof window.storage!=="undefined"){
+      const r=await window.storage.get(STORAGE_KEY);
+      raw = r&&r.value ? r.value : null;
+    }else{
+      raw = localStorage.getItem(STORAGE_KEY);   // standalone Safari / home-screen app
+    }
+  }catch(e){ raw=null; }
+  try{ store = raw ? JSON.parse(raw) : {counter:START_NO,orders:[]}; }
+  catch(e){ store = {counter:START_NO,orders:[]}; }
+  invoiceNo = Math.max(store.counter, START_NO);
+  store.counter = invoiceNo;
+  $("invNo").textContent = invLabel(invoiceNo);
+  renderHistory();
+}
+async function saveStore(){
+  try{
+    if(store.orders.length>50) store.orders=store.orders.slice(-50);
+    const data=JSON.stringify(store);
+    if(typeof window.storage!=="undefined") await window.storage.set(STORAGE_KEY,data);
+    else localStorage.setItem(STORAGE_KEY,data);
+  }catch(e){ /* storage unavailable — order still downloads as PDF */ }
+}
+
+/* ================= totals ================= */
+function calc(){
+  const sub = PRODUCTS.reduce((s,p,i)=>s+p.price*qty[i],0);
+  const shipping = num($("shipping").value);
+  const discount = num($("discount").value);
+  const total = Math.max(0, sub + shipping - discount);
+  const gst = total/11;
+  return {sub, shipping, discount, total, gst};
+}
+function refreshTotals(){
+  const t=calc();
+  $("tSub").textContent   = fmt.format(t.sub);
+  $("tGst").textContent   = fmt.format(t.gst);
+  $("tTotal").textContent = fmt.format(t.total);
+}
+
+/* ================= product list UI ================= */
+function buildProducts(){
+  const host=$("productList"); host.innerHTML="";
+  let idx=0;
+  CATEGORIES.forEach(cat=>{
+    const wrap=document.createElement("div"); wrap.className="cat";
+    wrap.innerHTML=`<div class="cat-head"><span class="dot" style="background:${cat.color}"></span>${cat.name}</div>`;
+    cat.items.forEach(()=>{
+      const i=idx++;
+      const p=PRODUCTS[i];
+      const row=document.createElement("div");
+      row.className="row"; row.id="row"+i;
+      row.innerHTML=`
+        <div class="pinfo">
+          <div class="pname">${p.name}</div>
+          <div class="punit">${fmt.format(p.price)} each</div>
+        </div>
+        <div class="controls">
+          <div class="ts">
+            <button type="button" id="ft${i}" aria-label="Take">T</button>
+            <button type="button" id="fs${i}" aria-label="Send">S</button>
+          </div>
+          <div class="stepper">
+            <button type="button" id="dec${i}" aria-label="Decrease">−</button>
+            <div class="qv" id="q${i}">0</div>
+            <button type="button" id="inc${i}" aria-label="Increase">+</button>
+          </div>
+          <div class="ltotal" id="lt${i}"></div>
+        </div>`;
+      wrap.appendChild(row);
+    });
+    host.appendChild(wrap);
+  });
+  PRODUCTS.forEach((p,i)=>{
+    $("inc"+i).addEventListener("click",()=>setQty(i,qty[i]+1));
+    $("dec"+i).addEventListener("click",()=>setQty(i,Math.max(0,qty[i]-1)));
+    $("ft"+i).addEventListener("click",()=>setFulfil(i,"T"));
+    $("fs"+i).addEventListener("click",()=>setFulfil(i,"S"));
+    paintRow(i);
+  });
+}
+function setQty(i,v){ qty[i]=v; paintRow(i); refreshTotals(); }
+function setFulfil(i,v){ fulfil[i]=(fulfil[i]===v)?"":v; paintRow(i); }
+function paintRow(i){
+  $("q"+i).textContent=qty[i];
+  $("lt"+i).textContent=qty[i]>0?fmt.format(qty[i]*PRODUCTS[i].price):"";
+  $("row"+i).classList.toggle("hasqty",qty[i]>0);
+  $("ft"+i).classList.toggle("on",fulfil[i]==="T");
+  $("fs"+i).classList.toggle("on",fulfil[i]==="S");
+}
+
+/* ================= payment segment ================= */
+$("paySeg").querySelectorAll("button").forEach(b=>{
+  b.addEventListener("click",()=>{
+    payMethod = (payMethod===b.dataset.v)?"":b.dataset.v;
+    $("paySeg").querySelectorAll("button").forEach(x=>x.classList.toggle("on",x.dataset.v===payMethod));
+  });
+});
+
+/* ================= PDF ================= */
+function buildPdf(){
+  const { jsPDF } = window.jspdf;
+  const doc = new jsPDF({unit:"pt",format:"a4"});
+  const W = doc.internal.pageSize.getWidth();
+  const M = 46;
+  const t = calc();
+
+  const items = PRODUCTS.map((p,i)=>({p,q:qty[i],f:fulfil[i]})).filter(x=>x.q>0);
+  if(items.length===0){ toast("Add at least one product first"); return; }
+
+  const BLUE=[31,150,201], INK=[29,43,58], MUT=[95,113,134], LINE=[221,229,236];
+  const BRICKS=[[228,67,46],[245,185,33],[76,175,80],[31,150,201]];
+
+  /* top bar + brick studs */
+  doc.setFillColor(...BLUE); doc.rect(0,0,W,8,"F");
+  BRICKS.forEach((c,i)=>{ doc.setFillColor(...c); doc.roundedRect(W-M-88+i*23,22,18,8,3,3,"F"); });
+
+  /* header */
+  doc.setTextColor(...INK);
+  doc.setFont("helvetica","bold"); doc.setFontSize(17);
+  doc.text("Tax Invoice | Order Form", M, 40);
+  doc.setFontSize(10); doc.setFont("helvetica","normal"); doc.setTextColor(...MUT);
+  doc.text(COMPANY.legal, M, 56);
+  doc.text(COMPANY.abn, M, 69);
+  doc.setFont("helvetica","bold"); doc.setTextColor(...INK); doc.setFontSize(11);
+  doc.text(COMPANY.brand, W-M, 44, {align:"right"});
+  doc.setFont("helvetica","normal"); doc.setFontSize(10); doc.setTextColor(...MUT);
+  doc.text("Invoice "+invLabel(invoiceNo), W-M, 58, {align:"right"});
+  doc.text("Date: "+fmtDateAU($("cDate").value||todayISO()), W-M, 71, {align:"right"});
+
+  /* customer block */
+  let y=92;
+  doc.setDrawColor(...LINE); doc.setLineWidth(1);
+  doc.roundedRect(M,y,W-2*M,72,6,6,"S");
+  const cx1=M+12, cx2=M+(W-2*M)/2+6;
+  doc.setFontSize(9.5);
+  const line=(x,yy,k,v)=>{
+    doc.setFont("helvetica","bold");  doc.setTextColor(...MUT); doc.text(k,x,yy);
+    doc.setFont("helvetica","normal");doc.setTextColor(...INK); doc.text(v||"—",x+58,yy,{maxWidth:(W-2*M)/2-80});
+  };
+  line(cx1,y+18,"Name",     $("cName").value);
+  line(cx1,y+36,"Email",    $("cEmail").value);
+  line(cx1,y+54,"Address",  $("cAddress").value);
+  line(cx2,y+18,"Phone",    $("cPhone").value);
+  line(cx2,y+36,"Company",  $("cCompany").value);
+  line(cx2,y+54,"Payment",  payMethod);
+
+  /* items table */
+  doc.autoTable({
+    startY:y+86, margin:{left:M,right:M},
+    head:[["Product","Qty","T/S","Unit price","Line total"]],
+    body:items.map(x=>[x.p.name,String(x.q),x.f||"—",fmt.format(x.p.price),fmt.format(x.p.price*x.q)]),
+    theme:"grid",
+    styles:{font:"helvetica",fontSize:9.5,textColor:INK,lineColor:LINE,lineWidth:.6,cellPadding:6},
+    headStyles:{fillColor:BLUE,textColor:[255,255,255],fontStyle:"bold"},
+    columnStyles:{
+      0:{cellWidth:"auto"},
+      1:{halign:"center",cellWidth:30},
+      2:{halign:"center",cellWidth:30},
+      3:{halign:"right",cellWidth:70},
+      4:{halign:"right",cellWidth:80},
+    },
+  });
+
+  /* totals */
+  let ty=doc.lastAutoTable.finalY+14;
+  const tw=200, tx=W-M-tw;
+  const trow=(k,v,bold,color)=>{
+    doc.setFont("helvetica",bold?"bold":"normal");
+    doc.setFontSize(bold?11:9.5);
+    doc.setTextColor(...(color||INK));
+    doc.text(k,tx,ty); doc.text(v,W-M,ty,{align:"right"});
+    ty+=bold?20:16;
+  };
+  doc.setDrawColor(...LINE);
+  trow("Subtotal",fmt.format(t.sub));
+  trow("Shipping",fmt.format(t.shipping));
+  trow("Discount",t.discount>0?"− "+fmt.format(t.discount):fmt.format(0));
+  doc.line(tx,ty-10,W-M,ty-10); ty+=2;
+  trow("TOTAL",fmt.format(t.total),true,BLUE);
+  trow("GST incl.",fmt.format(t.gst),false,MUT);
+
+  /* payment + signature */
+  let py=Math.max(ty+22, 700);
+  doc.setFontSize(9); doc.setTextColor(...MUT); doc.setFont("helvetica","normal");
+  COMPANY.bankLines.forEach((l,i)=>doc.text(l,M,py+i*13));
+  const sy=py+58;
+  doc.setDrawColor(...INK); doc.setLineWidth(.8);
+  doc.line(M,sy,M+180,sy);
+  doc.setTextColor(...MUT); doc.text("SIGNATURE",M,sy+12);
+  doc.setTextColor(...INK); doc.setFont("helvetica","bold"); doc.text("Paid:",M+240,sy);
+  doc.setDrawColor(...INK);
+  doc.rect(M+275,sy-9,11,11,"S"); doc.setFont("helvetica","normal"); doc.text("Yes",M+291,sy);
+  doc.rect(M+320,sy-9,11,11,"S"); doc.text("No",M+336,sy);
+
+  /* footer bar */
+  doc.setFillColor(...BLUE); doc.rect(0,doc.internal.pageSize.getHeight()-8,W,8,"F");
+
+  const fname=`SixBricks_Invoice_${invoiceNo}.pdf`;
+  doc.save(fname);
+  return {t,items,fname};
+}
+
+async function createInvoice(){
+  const res=buildPdf();
+  if(!res) return;
+  /* save order + bump counter */
+  store.orders.push({
+    no:invoiceNo,
+    date:$("cDate").value||todayISO(),
+    customer:{
+      name:$("cName").value, phone:$("cPhone").value, email:$("cEmail").value,
+      company:$("cCompany").value, address:$("cAddress").value, pay:payMethod
+    },
+    items:res.items.map(x=>({name:x.p.name,price:x.p.price,qty:x.q,fulfil:x.f})),
+    shipping:res.t.shipping, discount:res.t.discount, total:res.t.total
+  });
+  store.counter=invoiceNo+1;
+  await saveStore();
+  invoiceNo=store.counter;
+  $("invNo").textContent=invLabel(invoiceNo);
+  renderHistory();
+  toast("PDF created — check Files › Downloads");
+}
+
+/* ================= history ================= */
+function renderHistory(){
+  const host=$("histList");
+  if(!store||store.orders.length===0){
+    host.innerHTML='<div class="empty">No saved orders yet. Each PDF you create is saved here automatically.</div>';
+    return;
+  }
+  host.innerHTML="";
+  [...store.orders].reverse().forEach(o=>{
+    const div=document.createElement("div"); div.className="hist-item";
+    const who=o.customer.name||o.customer.company||"No name";
+    div.innerHTML=`
+      <div class="meta"><b>${invLabel(o.no)}</b> · ${who}
+        <div>${fmtDateAU(o.date)} · ${o.items.length} line item${o.items.length>1?"s":""} · ${fmt.format(o.total)}</div>
+      </div>
+      <div class="hbtns">
+        <button type="button" data-a="load" data-n="${o.no}">Load</button>
+        <button type="button" data-a="del" data-n="${o.no}" style="color:var(--red)">Delete</button>
+      </div>`;
+    host.appendChild(div);
+  });
+  host.querySelectorAll("button").forEach(b=>{
+    b.addEventListener("click",()=>{
+      const n=parseInt(b.dataset.n,10);
+      if(b.dataset.a==="load") loadOrder(n);
+      else deleteOrder(n);
+    });
+  });
+}
+function loadOrder(n){
+  const o=store.orders.find(x=>x.no===n); if(!o) return;
+  resetForm(false);
+  $("cName").value=o.customer.name||""; $("cPhone").value=o.customer.phone||"";
+  $("cEmail").value=o.customer.email||""; $("cCompany").value=o.customer.company||"";
+  $("cAddress").value=o.customer.address||""; $("cDate").value=o.date||todayISO();
+  payMethod=o.customer.pay||"";
+  $("paySeg").querySelectorAll("button").forEach(x=>x.classList.toggle("on",x.dataset.v===payMethod));
+  o.items.forEach(it=>{
+    const i=PRODUCTS.findIndex(p=>p.name===it.name);
+    if(i>=0){ qty[i]=it.qty; fulfil[i]=it.fulfil||""; paintRow(i); }
+  });
+  $("shipping").value=o.shipping||""; $("discount").value=o.discount||"";
+  refreshTotals();
+  window.scrollTo({top:0,behavior:"smooth"});
+  toast("Order "+invLabel(n)+" loaded — creating a PDF will save it as a new invoice");
+}
+async function deleteOrder(n){
+  store.orders=store.orders.filter(x=>x.no!==n);
+  await saveStore(); renderHistory(); toast("Order "+invLabel(n)+" deleted");
+}
+
+/* ================= reset ================= */
+function resetForm(scroll=true){
+  ["cName","cPhone","cEmail","cCompany","cAddress","shipping","discount"].forEach(id=>$(id).value="");
+  $("cDate").value=todayISO();
+  payMethod="";
+  $("paySeg").querySelectorAll("button").forEach(x=>x.classList.remove("on"));
+  qty.fill(0); fulfil.fill("");
+  PRODUCTS.forEach((_,i)=>paintRow(i));
+  refreshTotals();
+  if(scroll) window.scrollTo({top:0,behavior:"smooth"});
+}
+
+/* ================= init ================= */
+buildProducts();
+$("appLabel").textContent="Tax Invoice · App "+APP_ID;
+$("cDate").value=todayISO();
+$("shipping").addEventListener("input",refreshTotals);
+$("discount").addEventListener("input",refreshTotals);
+$("btnPdf").addEventListener("click",createInvoice);
+$("btnPdf2").addEventListener("click",createInvoice);
+$("btnNew").addEventListener("click",()=>resetForm());
+refreshTotals();
+loadStore();
+</script>
+</body>
+</html>
