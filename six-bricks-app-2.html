@@ -225,7 +225,7 @@
       <button class="btn btn-primary" id="btnPdf" type="button">Create PDF invoice</button>
       <button class="btn btn-ghost" id="btnNew" type="button">Start new order</button>
     </div>
-    <div class="note">Prices include GST. GST shown is 1/11 of the invoice total. The PDF downloads to Files on your iPad (Downloads folder in Safari).</div>
+    <div class="note">Prices include GST. GST shown is 1/11 of the invoice total. On iPad the share sheet opens — tap "Save to Files" to store the PDF, or AirDrop/email it straight to the customer.</div>
   </section>
 
   <!-- History -->
@@ -590,20 +590,39 @@ function buildPdf(o){
   /* footer bar */
   doc.setFillColor(...BLUE); doc.rect(0,doc.internal.pageSize.getHeight()-8,W,8,"F");
 
-  doc.save(`SixBricks_Invoice_${o.no}.pdf`);
+  return doc;
+}
+
+async function deliverPdf(doc, fname){
+  try{
+    const blob=doc.output("blob");
+    const file=new File([blob], fname, {type:"application/pdf"});
+    if(navigator.canShare && navigator.canShare({files:[file]})){
+      await navigator.share({files:[file], title:fname});   // iOS share sheet -> Save to Files
+      return "shared";
+    }
+  }catch(e){
+    if(e && e.name==="AbortError") return "cancelled";
+    /* fall through to plain download */
+  }
+  try{ doc.save(fname); return "saved"; }
+  catch(e){ return "failed"; }
 }
 
 async function createInvoice(){
   const o=snapshotFromForm();
   if(o.items.length===0){ toast("Add at least one product first"); return; }
-  buildPdf(o);
+  const how=await deliverPdf(buildPdf(o), `SixBricks_Invoice_${o.no}.pdf`);
+  if(how==="cancelled"){ toast("Cancelled — invoice "+invLabel(o.no)+" not issued"); return; }
+  if(how==="failed"){ toast("Could not create the PDF — try again"); return; }
   store.orders.push(o);
   store.counter=invoiceNo+1;
   await saveStore();
   invoiceNo=store.counter;
   $("invNo").textContent=invLabel(invoiceNo);
   renderHistory();
-  toast("PDF created — check Files › Downloads");
+  toast(how==="shared" ? "Invoice "+invLabel(o.no)+" issued"
+                       : "Invoice "+invLabel(o.no)+" downloaded — check Files › Downloads");
 }
 
 /* ================= history ================= */
@@ -640,8 +659,12 @@ function renderHistory(){
 }
 function viewOrder(n){
   const o=store.orders.find(x=>x.no===n); if(!o) return;
-  buildPdf(o.totals?o:legacySnapshot(o));
-  toast("Invoice "+invLabel(n)+" downloaded — check Files › Downloads");
+  const doc=buildPdf(o.totals?o:legacySnapshot(o));
+  deliverPdf(doc, `SixBricks_Invoice_${n}.pdf`).then(how=>{
+    if(how==="cancelled") return;
+    if(how==="failed"){ toast("Could not open invoice "+invLabel(n)); return; }
+    toast("Invoice "+invLabel(n)+(how==="shared"?" ready":" downloaded — check Files › Downloads"));
+  });
 }
 function loadOrder(n){
   const o=store.orders.find(x=>x.no===n); if(!o) return;
