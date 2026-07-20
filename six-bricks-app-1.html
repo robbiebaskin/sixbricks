@@ -157,6 +157,8 @@
   .ac-item{padding:13px 12px;font-size:.92rem;cursor:pointer;border-top:1px solid var(--line)}
   .ac-item:first-child{border-top:none}
   .ac-item:hover,.ac-item:active{background:#eef7fc}
+  .ac-item{display:flex;justify-content:space-between;gap:10px}
+  .ac-item b{color:var(--muted);font-weight:600;white-space:nowrap}
   .toast{
     position:fixed;left:50%;transform:translateX(-50%);bottom:110px;z-index:99;
     background:var(--ink);color:#fff;padding:12px 18px;border-radius:12px;font-size:.9rem;
@@ -192,9 +194,12 @@
       <div class="field"><label for="cPhone">Phone</label><input type="tel" id="cPhone" autocomplete="off"></div>
       <div class="field"><label for="cEmail">Email</label><input type="email" id="cEmail" autocomplete="off" autocapitalize="none"></div>
       <div class="field"><label for="cCompany">Company</label><input type="text" id="cCompany" autocomplete="off"></div>
-      <div class="field full"><label for="cAddress">Shipping address</label>
+      <div class="field full"><label for="cAddress">Street address</label>
+        <input type="text" id="cAddress" autocomplete="off" placeholder="e.g. 12 Smith St">
+      </div>
+      <div class="field full"><label for="cSuburb">Suburb / State / Postcode</label>
         <div class="ac-wrap">
-          <input type="text" id="cAddress" autocomplete="off">
+          <input type="text" id="cSuburb" autocomplete="off" placeholder="Start typing a suburb or postcode">
           <div class="ac-list" id="acList" hidden></div>
         </div>
       </div>
@@ -487,7 +492,7 @@ function snapshotFromForm(){
     date:$("cDate").value||todayISO(),
     customer:{
       name:$("cName").value, phone:$("cPhone").value, email:$("cEmail").value,
-      company:$("cCompany").value, address:$("cAddress").value, pay:payMethod
+      company:$("cCompany").value, address:$("cAddress").value, suburb:$("cSuburb").value, pay:payMethod
     },
     items,
     totals:t
@@ -543,7 +548,7 @@ function buildPdf(o){
   };
   line(cx1,y+18,"Name",     c.name);
   line(cx1,y+36,"Email",    c.email);
-  line(cx1,y+54,"Address",  c.address);
+  line(cx1,y+54,"Address",  [c.address,c.suburb].filter(Boolean).join(", "));
   line(cx2,y+18,"Phone",    c.phone);
   line(cx2,y+36,"Company",  c.company);
   line(cx2,y+54,"Payment",  c.pay);
@@ -682,7 +687,7 @@ function loadOrder(n){
   const c=o.customer||{};
   $("cName").value=c.name||""; $("cPhone").value=c.phone||"";
   $("cEmail").value=c.email||""; $("cCompany").value=c.company||"";
-  $("cAddress").value=c.address||""; $("cDate").value=o.date||todayISO();
+  $("cAddress").value=c.address||""; $("cSuburb").value=c.suburb||""; $("cDate").value=o.date||todayISO();
   payMethod=c.pay||"";
   $("paySeg").querySelectorAll("button").forEach(x=>x.classList.toggle("on",x.dataset.v===payMethod));
   o.items.forEach(it=>{
@@ -704,7 +709,7 @@ async function deleteOrder(n){
 
 /* ================= reset ================= */
 function resetForm(scroll=true){
-  ["cName","cPhone","cEmail","cCompany","cAddress","shipping","expoPct","setPct"].forEach(id=>$(id).value="");
+  ["cName","cPhone","cEmail","cCompany","cAddress","cSuburb","shipping","expoPct","setPct"].forEach(id=>$(id).value="");
   $("cDate").value=todayISO();
   payMethod="";
   $("paySeg").querySelectorAll("button").forEach(x=>x.classList.remove("on"));
@@ -714,54 +719,55 @@ function resetForm(scroll=true){
   if(scroll) window.scrollTo({top:0,behavior:"smooth"});
 }
 
-/* ================= address autocomplete (OpenStreetMap Photon, AU only) ================= */
-const AU_STATES={"New South Wales":"NSW","Victoria":"VIC","Queensland":"QLD","South Australia":"SA",
-  "Western Australia":"WA","Tasmania":"TAS","Northern Territory":"NT","Australian Capital Territory":"ACT"};
-let acCtl=null, acTimer=null;
-function acFormat(p){
-  const streetPart=[p.housenumber,p.street].filter(Boolean).join(" ") || p.name || "";
-  const suburb=p.district||p.city||p.town||p.village||p.suburb||"";
-  const state=AU_STATES[p.state]||p.state||"";
-  return [streetPart, suburb, [state,p.postcode].filter(Boolean).join(" ")].filter(Boolean).join(", ");
+/* ================= suburb/postcode autocomplete (official AU postcode list) ================= */
+let AU_LOCALITIES=null;   // [[suburb, state, postcode], ...] fetched once, then cached
+async function loadLocalities(){
+  if(AU_LOCALITIES) return;
+  try{
+    const res=await fetch("au-localities.json");
+    AU_LOCALITIES=await res.json();
+  }catch(e){ AU_LOCALITIES=[]; /* offline or preview — manual typing still works */ }
 }
-async function acSearch(q){
-  if(acCtl) acCtl.abort();
-  acCtl=new AbortController();
-  const url="https://photon.komoot.io/api/?limit=6&lang=en&lat=-33.87&lon=151.21&q="+encodeURIComponent(q+", Australia");
-  const res=await fetch(url,{signal:acCtl.signal});
-  const data=await res.json();
-  const seen=new Set(), out=[];
-  (data.features||[]).forEach(f=>{
-    if(!f.properties || f.properties.countrycode!=="AU") return;
-    const line=acFormat(f.properties);
-    if(line && !seen.has(line)){ seen.add(line); out.push(line); }
-  });
-  return out;
+let acTimer=null;
+function acMatches(q){
+  q=q.trim().toLowerCase();
+  if(!q || !AU_LOCALITIES || !AU_LOCALITIES.length) return [];
+  const isPc=/^\d/.test(q);
+  const starts=[], contains=[];
+  for(const [loc,st,pc] of AU_LOCALITIES){
+    if(isPc){
+      if(pc.startsWith(q)) starts.push([loc,st,pc]);
+    }else{
+      const l=loc.toLowerCase();
+      if(l.startsWith(q)) starts.push([loc,st,pc]);
+      else if(contains.length<8 && l.includes(q)) contains.push([loc,st,pc]);
+    }
+    if(starts.length>=8) break;
+  }
+  return starts.concat(contains).slice(0,8);
 }
 function acHide(){ const h=$("acList"); h.hidden=true; h.innerHTML=""; }
 function acShow(items){
   const host=$("acList");
   if(!items.length){ acHide(); return; }
-  host.innerHTML=items.map(l=>`<div class="ac-item" data-v="${l.replace(/"/g,"&quot;")}">${l}</div>`).join("");
+  host.innerHTML=items.map(([loc,st,pc])=>`<div class="ac-item" data-v="${loc} ${st} ${pc}"><span>${loc}</span><b>${st} ${pc}</b></div>`).join("");
   host.hidden=false;
   host.querySelectorAll(".ac-item").forEach(el=>{
     el.addEventListener("pointerdown",e=>{     // fires before the input loses focus
       e.preventDefault();
-      $("cAddress").value=el.dataset.v;
+      $("cSuburb").value=el.dataset.v;
       acHide();
     });
   });
 }
-$("cAddress").addEventListener("input",()=>{
-  const q=$("cAddress").value.trim();
+$("cSuburb").addEventListener("focus",loadLocalities);
+$("cSuburb").addEventListener("input",()=>{
   clearTimeout(acTimer);
-  if(q.length<4){ acHide(); return; }
-  acTimer=setTimeout(async()=>{
-    try{ acShow(await acSearch(q)); }
-    catch(e){ /* offline or superseded request — manual typing still works */ }
-  },300);
+  const q=$("cSuburb").value;
+  if(q.trim().length<2){ acHide(); return; }
+  acTimer=setTimeout(async()=>{ await loadLocalities(); acShow(acMatches(q)); },120);
 });
-$("cAddress").addEventListener("blur",()=>setTimeout(acHide,200));
+$("cSuburb").addEventListener("blur",()=>setTimeout(acHide,200));
 
 /* ================= init ================= */
 buildProducts();
