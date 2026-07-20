@@ -248,6 +248,7 @@
       <button class="btn btn-primary" id="btnPdf" type="button">Create invoice</button>
       <button class="btn btn-ghost" id="btnNew" type="button">Start new order</button>
     </div>
+    <div class="note" id="syncNote"></div>
     <div class="note">Prices include GST. GST shown is 1/11 of the invoice total. Create invoice issues the invoice and shows it on screen; tap Download there to save it to Files or AirDrop/email it to the customer.</div>
   </section>
 
@@ -379,8 +380,11 @@ async function loadStore(){
   catch(e){ store = {counter:START_NO,orders:[]}; }
   invoiceNo = Math.max(store.counter, START_NO);
   store.counter = invoiceNo;
+  store.queue = store.queue||[];
   $("invNo").textContent = invLabel(invoiceNo);
   renderHistory();
+  renderSyncStatus();
+  flushQueue();
 }
 async function saveStore(){
   try{
@@ -636,6 +640,9 @@ async function createInvoice(){
   const o=snapshotFromForm();
   if(o.items.length===0){ toast("Add at least one product first"); return; }
   store.orders.push(o);
+  store.queue=store.queue||[];
+  store.queue.push({uid:APP_ID+"-"+o.no+"-"+Date.now(), app:APP_ID, no:o.no, date:o.date,
+                    customer:o.customer, items:o.items, totals:o.totals});
   store.counter=invoiceNo+1;
   await saveStore();
   const issuedNo=o.no;
@@ -643,6 +650,8 @@ async function createInvoice(){
   $("invNo").textContent=invLabel(invoiceNo);
   renderHistory();
   openViewer(buildPdf(o), `SixBricks_Invoice_${issuedNo}.pdf`, issuedNo);
+  ensureSyncKey();
+  flushQueue();
   toast("Invoice "+invLabel(issuedNo)+" created — tap Download to save or share it");
 }
 
@@ -833,6 +842,44 @@ $("cSuburb").addEventListener("input",()=>{
 });
 $("cSuburb").addEventListener("blur",()=>setTimeout(acHide,200));
 
+/* ================= Google Sheet sync ================= */
+const SYNC_URL="https://script.google.com/macros/s/AKfycbwxJYgoV0FTRqCu1GWlKWTXxsxuEw-NmN9shSyLycGqe4LzjGJDez_Ug8hXbX6txLln/exec";
+const SYNC_KEY_STORE="sixbricks-sync-key";
+function getSyncKey(){ try{ return localStorage.getItem(SYNC_KEY_STORE)||""; }catch(e){ return ""; } }
+function ensureSyncKey(){
+  let k=getSyncKey();
+  if(!k){
+    k=(prompt("Enter the sync key for Google Sheet logging (the SYNC_KEY set in the Apps Script). Cancel to skip syncing on this iPad for now.")||"").trim();
+    if(k){ try{ localStorage.setItem(SYNC_KEY_STORE,k); }catch(e){} }
+  }
+  return k;
+}
+let flushing=false;
+async function flushQueue(){
+  if(flushing) return;
+  if(!store || !store.queue || !store.queue.length) return;
+  const key=getSyncKey(); if(!key) { renderSyncStatus(); return; }
+  flushing=true;
+  try{
+    while(store.queue.length){
+      const item=store.queue[0];
+      const res=await fetch(SYNC_URL,{method:"POST",body:JSON.stringify({...item,k:key})});
+      const txt=await res.text();
+      if(!res.ok || txt.indexOf("ok")===-1) break;   // denied or error — keep queued, retry later
+      store.queue.shift();
+      await saveStore();
+    }
+  }catch(e){ /* offline or blocked — retry on next create or reconnect */ }
+  flushing=false;
+  renderSyncStatus();
+}
+function renderSyncStatus(){
+  const el=$("syncNote"); if(!el||!store) return;
+  const q=(store.queue||[]).length;
+  if(!getSyncKey()){ el.textContent="Sheet sync: key not set — you'll be asked on the next invoice."; return; }
+  el.textContent = q ? "Sheet sync: "+q+" invoice"+(q>1?"s":"")+" waiting to send." : "Sheet sync: up to date.";
+}
+
 /* ================= init ================= */
 buildProducts();
 $("appLabel").textContent="Tax Invoice · App "+APP_ID;
@@ -843,6 +890,7 @@ $("setPct").addEventListener("input",refreshTotals);
 $("btnPdf").addEventListener("click",createInvoice);
 $("btnPdf2").addEventListener("click",createInvoice);
 $("btnNew").addEventListener("click",()=>resetForm());
+window.addEventListener("online",flushQueue);
 refreshTotals();
 loadStore();
 </script>
