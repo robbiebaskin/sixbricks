@@ -383,9 +383,10 @@ function calc(){
   const expoPct = pct($("expoPct").value);
   const setPct  = pct($("setPct").value);
   const sets = completeSets();
-  const setBase = r2(PRODUCTS.reduce((s,p,i)=>s+(sets.includes(p.cat)?p.price*qty[i]:0),0));
-  const setAmt  = r2(setBase*setPct/100);                 // set discount on complete-set items
-  const expoAmt = r2((sub-setAmt)*expoPct/100);           // expo discount on the remainder
+  const expoAmt = r2(sub*expoPct/100);                     // expo discount on ALL products first
+  const setGross = r2(PRODUCTS.reduce((s,p,i)=>s+(sets.includes(p.cat)?p.price*qty[i]:0),0));
+  const setBase = r2(setGross*(1-expoPct/100));            // set value net of the expo discount
+  const setAmt  = r2(setBase*setPct/100);                  // set discount on that net figure
   const total = Math.max(0, r2(sub - setAmt - expoAmt + shipping));
   const gst = r2(total/11);
   return {sub, shipping, expoPct, expoAmt, setPct, setAmt, setBase, sets, total, gst};
@@ -400,8 +401,8 @@ function refreshTotals(){
     ? "Complete sets in this order: "+t.sets.join(", ")
     : "No complete sets yet — every item in a set must be ordered to qualify";
   const rows=[["Subtotal",fmt.format(t.sub),""]];
-  if(t.setAmt>0)  rows.push([`Set discount (${t.setPct}% of ${fmt.format(t.setBase)})`,"-"+fmt.format(t.setAmt),"neg"]);
   if(t.expoAmt>0) rows.push([`Expo discount (${t.expoPct}%)`,"-"+fmt.format(t.expoAmt),"neg"]);
+  if(t.setAmt>0)  rows.push([`Set discount (${t.setPct}% of ${fmt.format(t.setBase)})`,"-"+fmt.format(t.setAmt),"neg"]);
   rows.push(["Shipping",fmt.format(t.shipping),""]);
   rows.push(["Total",fmt.format(t.total),"big"]);
   rows.push(["GST incl.",fmt.format(t.gst),"mut"]);
@@ -565,8 +566,8 @@ function buildPdf(o){
     ty+=bold?20:16;
   };
   trow("Subtotal",fmt.format(t.sub));
-  if(t.setAmt>0)  trow(`Set discount (${t.setPct}%)`,"-"+fmt.format(t.setAmt));
   if(t.expoAmt>0) trow(`Expo discount (${t.expoPct}%)`,"-"+fmt.format(t.expoAmt));
+  if(t.setAmt>0)  trow(`Set discount (${t.setPct}%)`,"-"+fmt.format(t.setAmt));
   if(t.legacyDiscount>0) trow("Discount","-"+fmt.format(t.legacyDiscount));
   trow("Shipping",fmt.format(t.shipping));
   doc.setDrawColor(...LINE); doc.line(tx,ty-10,W-M,ty-10); ty+=2;
