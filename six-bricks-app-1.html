@@ -164,7 +164,9 @@
   .viewer-bar{background:#fff;border-bottom:2px solid var(--blue);padding:calc(10px + env(safe-area-inset-top)) 14px 10px;display:flex;justify-content:space-between;align-items:center;gap:10px}
   .viewer-bar .vbtns{display:flex;gap:8px}
   .viewer-bar .btn{min-height:44px;padding:0 16px;font-size:.95rem}
-  .viewer-frame{flex:1;border:none;width:100%}
+  .viewer-body{flex:1;overflow:auto;-webkit-overflow-scrolling:touch;display:flex;flex-direction:column;align-items:center;gap:12px;padding:12px}
+  .viewer-body canvas{background:#fff;border-radius:4px;box-shadow:0 4px 18px rgba(0,0,0,.35)}
+  .viewer-frame{border:none;width:100%;height:100%}
   .toast{
     position:fixed;left:50%;transform:translateX(-50%);bottom:110px;z-index:99;
     background:var(--ink);color:#fff;padding:12px 18px;border-radius:12px;font-size:.9rem;
@@ -684,8 +686,19 @@ function orderDoc(n){
   const o=store.orders.find(x=>x.no===n); if(!o) return null;
   return buildPdf(o.totals?o:legacySnapshot(o));
 }
-function openViewer(doc, fname, n){
-  const url=URL.createObjectURL(doc.output("blob"));
+let pdfjsReady=null;
+function loadPdfJs(){
+  if(pdfjsReady) return pdfjsReady;
+  pdfjsReady=new Promise((res,rej)=>{
+    const s=document.createElement("script");
+    s.src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js";
+    s.onload=()=>{ window.pdfjsLib.GlobalWorkerOptions.workerSrc="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js"; res(); };
+    s.onerror=()=>{ pdfjsReady=null; rej(new Error("pdfjs load failed")); };
+    document.head.appendChild(s);
+  });
+  return pdfjsReady;
+}
+async function openViewer(doc, fname, n){
   const ov=document.createElement("div"); ov.className="viewer";
   ov.innerHTML=`
     <div class="viewer-bar">
@@ -695,10 +708,32 @@ function openViewer(doc, fname, n){
         <button type="button" class="btn btn-primary" data-v="close">Close</button>
       </div>
     </div>
-    <iframe class="viewer-frame" src="${url}" title="Invoice ${invLabel(n)}"></iframe>`;
+    <div class="viewer-body"></div>`;
   document.body.appendChild(ov);
-  ov.querySelector('[data-v="close"]').addEventListener("click",()=>{ URL.revokeObjectURL(url); ov.remove(); });
+  ov.querySelector('[data-v="close"]').addEventListener("click",()=>ov.remove());
   ov.querySelector('[data-v="dl"]').addEventListener("click",()=>{ deliverPdf(doc,fname); });
+  const body=ov.querySelector(".viewer-body");
+  try{
+    await loadPdfJs();
+    const pdf=await pdfjsLib.getDocument({data:doc.output("arraybuffer")}).promise;
+    const avail=Math.min(body.clientWidth,860)-24;   // fit page to screen width
+    const dpr=window.devicePixelRatio||1;            // render sharp on retina
+    for(let p=1;p<=pdf.numPages;p++){
+      const page=await pdf.getPage(p);
+      const base=page.getViewport({scale:1});
+      const scale=avail/base.width;
+      const vp=page.getViewport({scale:scale*dpr});
+      const canvas=document.createElement("canvas");
+      canvas.width=vp.width; canvas.height=vp.height;
+      canvas.style.width=(vp.width/dpr)+"px"; canvas.style.height=(vp.height/dpr)+"px";
+      body.appendChild(canvas);
+      await page.render({canvasContext:canvas.getContext("2d"), viewport:vp}).promise;
+    }
+  }catch(e){
+    /* pdf.js unavailable (offline) — fall back to the browser's own PDF frame */
+    const url=URL.createObjectURL(doc.output("blob"));
+    body.innerHTML=`<iframe class="viewer-frame" src="${url}" title="Invoice ${invLabel(n)}"></iframe>`;
+  }
 }
 function viewOrder(n){
   const doc=orderDoc(n); if(!doc) return;
