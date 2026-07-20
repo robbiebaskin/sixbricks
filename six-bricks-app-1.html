@@ -613,7 +613,7 @@ async function deliverPdf(doc, fname){
     const blob=doc.output("blob");
     const file=new File([blob], fname, {type:"application/pdf"});
     if(navigator.canShare && navigator.canShare({files:[file]})){
-      await navigator.share({files:[file], title:fname});   // iOS share sheet -> Save to Files
+      await navigator.share({files:[file]});   // iOS share sheet -> Save to Files (no title: iOS saves it as a stray .txt)
       return "shared";
     }
   }catch(e){
