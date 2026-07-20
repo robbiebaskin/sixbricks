@@ -152,6 +152,11 @@
   .brow.neg span:last-child{color:var(--red)}
   .brow.big{font-weight:700;font-size:1.08rem;color:var(--blue-dark);border-top:1px solid var(--line);margin-top:4px;padding-top:9px}
   .brow.mut{color:var(--muted)}
+  .ac-wrap{position:relative}
+  .ac-list{position:absolute;top:calc(100% + 4px);left:0;right:0;background:#fff;border:1px solid var(--line);border-radius:10px;box-shadow:0 8px 24px rgba(29,43,58,.14);z-index:40;max-height:264px;overflow-y:auto}
+  .ac-item{padding:13px 12px;font-size:.92rem;cursor:pointer;border-top:1px solid var(--line)}
+  .ac-item:first-child{border-top:none}
+  .ac-item:hover,.ac-item:active{background:#eef7fc}
   .toast{
     position:fixed;left:50%;transform:translateX(-50%);bottom:110px;z-index:99;
     background:var(--ink);color:#fff;padding:12px 18px;border-radius:12px;font-size:.9rem;
@@ -187,7 +192,12 @@
       <div class="field"><label for="cPhone">Phone</label><input type="tel" id="cPhone" autocomplete="off"></div>
       <div class="field"><label for="cEmail">Email</label><input type="email" id="cEmail" autocomplete="off" autocapitalize="none"></div>
       <div class="field"><label for="cCompany">Company</label><input type="text" id="cCompany" autocomplete="off"></div>
-      <div class="field full"><label for="cAddress">Shipping address</label><input type="text" id="cAddress" autocomplete="off"></div>
+      <div class="field full"><label for="cAddress">Shipping address</label>
+        <div class="ac-wrap">
+          <input type="text" id="cAddress" autocomplete="off">
+          <div class="ac-list" id="acList" hidden></div>
+        </div>
+      </div>
       <div class="field"><label>Payment method</label>
         <div class="seg" id="paySeg">
           <button type="button" data-v="Bank Transfer">Bank transfer</button>
@@ -703,6 +713,55 @@ function resetForm(scroll=true){
   refreshTotals();
   if(scroll) window.scrollTo({top:0,behavior:"smooth"});
 }
+
+/* ================= address autocomplete (OpenStreetMap Photon, AU only) ================= */
+const AU_STATES={"New South Wales":"NSW","Victoria":"VIC","Queensland":"QLD","South Australia":"SA",
+  "Western Australia":"WA","Tasmania":"TAS","Northern Territory":"NT","Australian Capital Territory":"ACT"};
+let acCtl=null, acTimer=null;
+function acFormat(p){
+  const streetPart=[p.housenumber,p.street].filter(Boolean).join(" ") || p.name || "";
+  const suburb=p.district||p.city||p.town||p.village||p.suburb||"";
+  const state=AU_STATES[p.state]||p.state||"";
+  return [streetPart, suburb, [state,p.postcode].filter(Boolean).join(" ")].filter(Boolean).join(", ");
+}
+async function acSearch(q){
+  if(acCtl) acCtl.abort();
+  acCtl=new AbortController();
+  const url="https://photon.komoot.io/api/?limit=6&lang=en&lat=-33.87&lon=151.21&q="+encodeURIComponent(q+", Australia");
+  const res=await fetch(url,{signal:acCtl.signal});
+  const data=await res.json();
+  const seen=new Set(), out=[];
+  (data.features||[]).forEach(f=>{
+    if(!f.properties || f.properties.countrycode!=="AU") return;
+    const line=acFormat(f.properties);
+    if(line && !seen.has(line)){ seen.add(line); out.push(line); }
+  });
+  return out;
+}
+function acHide(){ const h=$("acList"); h.hidden=true; h.innerHTML=""; }
+function acShow(items){
+  const host=$("acList");
+  if(!items.length){ acHide(); return; }
+  host.innerHTML=items.map(l=>`<div class="ac-item" data-v="${l.replace(/"/g,"&quot;")}">${l}</div>`).join("");
+  host.hidden=false;
+  host.querySelectorAll(".ac-item").forEach(el=>{
+    el.addEventListener("pointerdown",e=>{     // fires before the input loses focus
+      e.preventDefault();
+      $("cAddress").value=el.dataset.v;
+      acHide();
+    });
+  });
+}
+$("cAddress").addEventListener("input",()=>{
+  const q=$("cAddress").value.trim();
+  clearTimeout(acTimer);
+  if(q.length<4){ acHide(); return; }
+  acTimer=setTimeout(async()=>{
+    try{ acShow(await acSearch(q)); }
+    catch(e){ /* offline or superseded request — manual typing still works */ }
+  },300);
+});
+$("cAddress").addEventListener("blur",()=>setTimeout(acHide,200));
 
 /* ================= init ================= */
 buildProducts();
