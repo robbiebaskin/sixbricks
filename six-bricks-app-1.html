@@ -501,7 +501,7 @@ function buildPdf(){
   doc.setDrawColor(...LINE);
   trow("Subtotal",fmt.format(t.sub));
   trow("Shipping",fmt.format(t.shipping));
-  trow("Discount",t.discount>0?"− "+fmt.format(t.discount):fmt.format(0));
+  trow("Discount",t.discount>0?"-"+fmt.format(t.discount):fmt.format(0));
   doc.line(tx,ty-10,W-M,ty-10); ty+=2;
   trow("TOTAL",fmt.format(t.total),true,BLUE);
   trow("GST incl.",fmt.format(t.gst),false,MUT);
