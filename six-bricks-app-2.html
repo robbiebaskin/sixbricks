@@ -141,6 +141,17 @@
   .hist-item .hbtns button{font:inherit;font-weight:600;font-size:.85rem;border-radius:9px;padding:9px 13px;min-height:40px;cursor:pointer;border:1px solid var(--line);background:#fff}
   .empty{color:var(--muted);font-size:.9rem;padding:8px 4px}
   .note{color:var(--muted);font-size:.8rem;margin-top:10px}
+  .hint{color:var(--muted);font-size:.78rem}
+  .money-input.pct span{left:auto;right:12px}
+  .money-input.pct input{padding-left:12px;padding-right:32px}
+  .prod-subtotal{display:flex;justify-content:space-between;align-items:center;border-top:2px solid var(--line);margin-top:10px;padding:12px 4px 2px;font-weight:600}
+  .prod-subtotal b{font-variant-numeric:tabular-nums;font-size:1.1rem;color:var(--blue-dark)}
+  .breakdown{margin-top:16px;border-top:1px solid var(--line);padding-top:8px}
+  .brow{display:flex;justify-content:space-between;padding:5px 2px;font-size:.92rem}
+  .brow span:last-child{font-variant-numeric:tabular-nums;font-weight:600}
+  .brow.neg span:last-child{color:var(--red)}
+  .brow.big{font-weight:700;font-size:1.08rem;color:var(--blue-dark);border-top:1px solid var(--line);margin-top:4px;padding-top:9px}
+  .brow.mut{color:var(--muted)}
   .toast{
     position:fixed;left:50%;transform:translateX(-50%);bottom:110px;z-index:99;
     background:var(--ink);color:#fff;padding:12px 18px;border-radius:12px;font-size:.9rem;
@@ -191,6 +202,7 @@
   <section class="card">
     <h2><span class="dot" style="background:var(--yellow)"></span>Products</h2>
     <div id="productList"></div>
+    <div class="prod-subtotal"><span>Products subtotal</span><b id="prodSub">$0.00</b></div>
   </section>
 
   <!-- Charges -->
@@ -200,10 +212,15 @@
       <div class="field"><label for="shipping">Shipping (AUD)</label>
         <div class="money-input"><span>$</span><input type="number" id="shipping" inputmode="decimal" min="0" step="0.01" placeholder="0.00"></div>
       </div>
-      <div class="field"><label for="discount">Discount (AUD)</label>
-        <div class="money-input"><span>$</span><input type="number" id="discount" inputmode="decimal" min="0" step="0.01" placeholder="0.00"></div>
+      <div class="field"><label for="expoPct">Expo discount — all products</label>
+        <div class="money-input pct"><span>%</span><input type="number" id="expoPct" inputmode="decimal" min="0" max="100" step="0.5" placeholder="0"></div>
+      </div>
+      <div class="field full"><label for="setPct">Set discount — complete sets only</label>
+        <div class="money-input pct"><span>%</span><input type="number" id="setPct" inputmode="decimal" min="0" max="100" step="0.5" placeholder="0"></div>
+        <div class="hint" id="setHint"></div>
       </div>
     </div>
+    <div class="breakdown" id="breakdown"></div>
     <div class="actions">
       <button class="btn btn-primary" id="btnPdf" type="button">Create PDF invoice</button>
       <button class="btn btn-ghost" id="btnNew" type="button">Start new order</button>
@@ -278,6 +295,7 @@ const CATEGORIES = [
     ["Six Bricks Accreditation",250],
   ]},
 ];
+const SET_CATS = ["Story Kits","Story Books","Activity Booklets"];
 
 const PRODUCTS = [];
 CATEGORIES.forEach(c => c.items.forEach(([name,price]) => PRODUCTS.push({name, price, cat:c.name})));
@@ -294,10 +312,10 @@ const COMPANY = {
 };
 
 /* ================= state ================= */
+const APP_ID = 2;                 // this app's ID — invoices start with this digit
+const START_NO = APP_ID*10000+1;  // app 1 -> 10001..., app 2 -> 20001...
 let qty    = new Array(PRODUCTS.length).fill(0);
 let fulfil = new Array(PRODUCTS.length).fill("");   // "", "T", "S"
-const APP_ID = 2;                 // this app's ID — invoices start with this digit
-const START_NO = APP_ID*10000+1;  // app 1 → 10001…, app 2 → 20001…
 let payMethod = "";
 let invoiceNo = START_NO;
 let store = null;          // {counter, orders:[]}
@@ -311,6 +329,8 @@ function toast(msg){
   clearTimeout(t._h); t._h=setTimeout(()=>t.classList.remove("show"),2200);
 }
 function num(v){ const n=parseFloat(v); return isFinite(n)&&n>0?n:0; }
+function pct(v){ const n=parseFloat(v); return isFinite(n)?Math.min(100,Math.max(0,n)):0; }
+function r2(x){ return Math.round(x*100)/100; }
 function todayISO(){
   const d=new Date(), p=x=>String(x).padStart(2,"0");
   return `${d.getFullYear()}-${p(d.getMonth()+1)}-${p(d.getDate())}`;
@@ -349,19 +369,43 @@ async function saveStore(){
 }
 
 /* ================= totals ================= */
+function completeSets(){
+  const done=[];
+  SET_CATS.forEach(cat=>{
+    const idxs=PRODUCTS.map((p,i)=>p.cat===cat?i:-1).filter(i=>i>=0);
+    if(idxs.length && idxs.every(i=>qty[i]>0)) done.push(cat);
+  });
+  return done;
+}
 function calc(){
-  const sub = PRODUCTS.reduce((s,p,i)=>s+p.price*qty[i],0);
+  const sub = r2(PRODUCTS.reduce((s,p,i)=>s+p.price*qty[i],0));
   const shipping = num($("shipping").value);
-  const discount = num($("discount").value);
-  const total = Math.max(0, sub + shipping - discount);
-  const gst = total/11;
-  return {sub, shipping, discount, total, gst};
+  const expoPct = pct($("expoPct").value);
+  const setPct  = pct($("setPct").value);
+  const sets = completeSets();
+  const setBase = r2(PRODUCTS.reduce((s,p,i)=>s+(sets.includes(p.cat)?p.price*qty[i]:0),0));
+  const setAmt  = r2(setBase*setPct/100);                 // set discount on complete-set items
+  const expoAmt = r2((sub-setAmt)*expoPct/100);           // expo discount on the remainder
+  const total = Math.max(0, r2(sub - setAmt - expoAmt + shipping));
+  const gst = r2(total/11);
+  return {sub, shipping, expoPct, expoAmt, setPct, setAmt, setBase, sets, total, gst};
 }
 function refreshTotals(){
   const t=calc();
-  $("tSub").textContent   = fmt.format(t.sub);
-  $("tGst").textContent   = fmt.format(t.gst);
-  $("tTotal").textContent = fmt.format(t.total);
+  $("prodSub").textContent = fmt.format(t.sub);
+  $("tSub").textContent    = fmt.format(t.sub);
+  $("tGst").textContent    = fmt.format(t.gst);
+  $("tTotal").textContent  = fmt.format(t.total);
+  $("setHint").textContent = t.sets.length
+    ? "Complete sets in this order: "+t.sets.join(", ")
+    : "No complete sets yet — every item in a set must be ordered to qualify";
+  const rows=[["Subtotal",fmt.format(t.sub),""]];
+  if(t.setAmt>0)  rows.push([`Set discount (${t.setPct}% of ${fmt.format(t.setBase)})`,"-"+fmt.format(t.setAmt),"neg"]);
+  if(t.expoAmt>0) rows.push([`Expo discount (${t.expoPct}%)`,"-"+fmt.format(t.expoAmt),"neg"]);
+  rows.push(["Shipping",fmt.format(t.shipping),""]);
+  rows.push(["Total",fmt.format(t.total),"big"]);
+  rows.push(["GST incl.",fmt.format(t.gst),"mut"]);
+  $("breakdown").innerHTML = rows.map(([k,v,c])=>`<div class="brow ${c}"><span>${k}</span><span>${v}</span></div>`).join("");
 }
 
 /* ================= product list UI ================= */
@@ -423,16 +467,37 @@ $("paySeg").querySelectorAll("button").forEach(b=>{
   });
 });
 
+/* ================= order snapshot ================= */
+function snapshotFromForm(){
+  const t=calc();
+  const items=PRODUCTS.map((p,i)=>({name:p.name,price:p.price,qty:qty[i],fulfil:fulfil[i]})).filter(x=>x.qty>0);
+  return {
+    no:invoiceNo,
+    date:$("cDate").value||todayISO(),
+    customer:{
+      name:$("cName").value, phone:$("cPhone").value, email:$("cEmail").value,
+      company:$("cCompany").value, address:$("cAddress").value, pay:payMethod
+    },
+    items,
+    totals:t
+  };
+}
+function legacySnapshot(o){
+  /* orders saved before the two-tier discounts had flat shipping/discount fields */
+  const sub=r2((o.items||[]).reduce((s,x)=>s+x.price*x.qty,0));
+  const shipping=o.shipping||0, legacyDiscount=o.discount||0;
+  const total=(typeof o.total==="number")?o.total:Math.max(0,r2(sub+shipping-legacyDiscount));
+  return {...o, totals:{sub, shipping, setPct:0,setAmt:0,setBase:0, expoPct:0,expoAmt:0,
+    legacyDiscount, total, gst:r2(total/11)}};
+}
+
 /* ================= PDF ================= */
-function buildPdf(){
+function buildPdf(o){
   const { jsPDF } = window.jspdf;
   const doc = new jsPDF({unit:"pt",format:"a4"});
   const W = doc.internal.pageSize.getWidth();
   const M = 46;
-  const t = calc();
-
-  const items = PRODUCTS.map((p,i)=>({p,q:qty[i],f:fulfil[i]})).filter(x=>x.q>0);
-  if(items.length===0){ toast("Add at least one product first"); return; }
+  const t = o.totals;
 
   const BLUE=[31,150,201], INK=[29,43,58], MUT=[95,113,134], LINE=[221,229,236];
   const BRICKS=[[228,67,46],[245,185,33],[76,175,80],[31,150,201]];
@@ -451,8 +516,8 @@ function buildPdf(){
   doc.setFont("helvetica","bold"); doc.setTextColor(...INK); doc.setFontSize(11);
   doc.text(COMPANY.brand, W-M, 44, {align:"right"});
   doc.setFont("helvetica","normal"); doc.setFontSize(10); doc.setTextColor(...MUT);
-  doc.text("Invoice "+invLabel(invoiceNo), W-M, 58, {align:"right"});
-  doc.text("Date: "+fmtDateAU($("cDate").value||todayISO()), W-M, 71, {align:"right"});
+  doc.text("Invoice "+invLabel(o.no), W-M, 58, {align:"right"});
+  doc.text("Date: "+fmtDateAU(o.date), W-M, 71, {align:"right"});
 
   /* customer block */
   let y=92;
@@ -460,22 +525,23 @@ function buildPdf(){
   doc.roundedRect(M,y,W-2*M,72,6,6,"S");
   const cx1=M+12, cx2=M+(W-2*M)/2+6;
   doc.setFontSize(9.5);
+  const c=o.customer||{};
   const line=(x,yy,k,v)=>{
     doc.setFont("helvetica","bold");  doc.setTextColor(...MUT); doc.text(k,x,yy);
     doc.setFont("helvetica","normal");doc.setTextColor(...INK); doc.text(v||"—",x+58,yy,{maxWidth:(W-2*M)/2-80});
   };
-  line(cx1,y+18,"Name",     $("cName").value);
-  line(cx1,y+36,"Email",    $("cEmail").value);
-  line(cx1,y+54,"Address",  $("cAddress").value);
-  line(cx2,y+18,"Phone",    $("cPhone").value);
-  line(cx2,y+36,"Company",  $("cCompany").value);
-  line(cx2,y+54,"Payment",  payMethod);
+  line(cx1,y+18,"Name",     c.name);
+  line(cx1,y+36,"Email",    c.email);
+  line(cx1,y+54,"Address",  c.address);
+  line(cx2,y+18,"Phone",    c.phone);
+  line(cx2,y+36,"Company",  c.company);
+  line(cx2,y+54,"Payment",  c.pay);
 
   /* items table */
   doc.autoTable({
     startY:y+86, margin:{left:M,right:M},
     head:[["Product","Qty","T/S","Unit price","Line total"]],
-    body:items.map(x=>[x.p.name,String(x.q),x.f||"—",fmt.format(x.p.price),fmt.format(x.p.price*x.q)]),
+    body:o.items.map(x=>[x.name,String(x.qty),x.fulfil||"—",fmt.format(x.price),fmt.format(x.price*x.qty)]),
     theme:"grid",
     styles:{font:"helvetica",fontSize:9.5,textColor:INK,lineColor:LINE,lineWidth:.6,cellPadding:6},
     headStyles:{fillColor:BLUE,textColor:[255,255,255],fontStyle:"bold"},
@@ -490,7 +556,7 @@ function buildPdf(){
 
   /* totals */
   let ty=doc.lastAutoTable.finalY+14;
-  const tw=200, tx=W-M-tw;
+  const tw=230, tx=W-M-tw;
   const trow=(k,v,bold,color)=>{
     doc.setFont("helvetica",bold?"bold":"normal");
     doc.setFontSize(bold?11:9.5);
@@ -498,11 +564,12 @@ function buildPdf(){
     doc.text(k,tx,ty); doc.text(v,W-M,ty,{align:"right"});
     ty+=bold?20:16;
   };
-  doc.setDrawColor(...LINE);
   trow("Subtotal",fmt.format(t.sub));
+  if(t.setAmt>0)  trow(`Set discount (${t.setPct}%)`,"-"+fmt.format(t.setAmt));
+  if(t.expoAmt>0) trow(`Expo discount (${t.expoPct}%)`,"-"+fmt.format(t.expoAmt));
+  if(t.legacyDiscount>0) trow("Discount","-"+fmt.format(t.legacyDiscount));
   trow("Shipping",fmt.format(t.shipping));
-  trow("Discount",t.discount>0?"-"+fmt.format(t.discount):fmt.format(0));
-  doc.line(tx,ty-10,W-M,ty-10); ty+=2;
+  doc.setDrawColor(...LINE); doc.line(tx,ty-10,W-M,ty-10); ty+=2;
   trow("TOTAL",fmt.format(t.total),true,BLUE);
   trow("GST incl.",fmt.format(t.gst),false,MUT);
 
@@ -522,25 +589,14 @@ function buildPdf(){
   /* footer bar */
   doc.setFillColor(...BLUE); doc.rect(0,doc.internal.pageSize.getHeight()-8,W,8,"F");
 
-  const fname=`SixBricks_Invoice_${invoiceNo}.pdf`;
-  doc.save(fname);
-  return {t,items,fname};
+  doc.save(`SixBricks_Invoice_${o.no}.pdf`);
 }
 
 async function createInvoice(){
-  const res=buildPdf();
-  if(!res) return;
-  /* save order + bump counter */
-  store.orders.push({
-    no:invoiceNo,
-    date:$("cDate").value||todayISO(),
-    customer:{
-      name:$("cName").value, phone:$("cPhone").value, email:$("cEmail").value,
-      company:$("cCompany").value, address:$("cAddress").value, pay:payMethod
-    },
-    items:res.items.map(x=>({name:x.p.name,price:x.p.price,qty:x.q,fulfil:x.f})),
-    shipping:res.t.shipping, discount:res.t.discount, total:res.t.total
-  });
+  const o=snapshotFromForm();
+  if(o.items.length===0){ toast("Add at least one product first"); return; }
+  buildPdf(o);
+  store.orders.push(o);
   store.counter=invoiceNo+1;
   await saveStore();
   invoiceNo=store.counter;
@@ -559,12 +615,14 @@ function renderHistory(){
   host.innerHTML="";
   [...store.orders].reverse().forEach(o=>{
     const div=document.createElement("div"); div.className="hist-item";
-    const who=o.customer.name||o.customer.company||"No name";
+    const who=(o.customer&&(o.customer.name||o.customer.company))||"No name";
+    const total=o.totals?o.totals.total:(o.total||0);
     div.innerHTML=`
       <div class="meta"><b>${invLabel(o.no)}</b> · ${who}
-        <div>${fmtDateAU(o.date)} · ${o.items.length} line item${o.items.length>1?"s":""} · ${fmt.format(o.total)}</div>
+        <div>${fmtDateAU(o.date)} · ${o.items.length} line item${o.items.length>1?"s":""} · ${fmt.format(total)}</div>
       </div>
       <div class="hbtns">
+        <button type="button" data-a="view" data-n="${o.no}">View</button>
         <button type="button" data-a="load" data-n="${o.no}">Load</button>
         <button type="button" data-a="del" data-n="${o.no}" style="color:var(--red)">Delete</button>
       </div>`;
@@ -573,24 +631,34 @@ function renderHistory(){
   host.querySelectorAll("button").forEach(b=>{
     b.addEventListener("click",()=>{
       const n=parseInt(b.dataset.n,10);
-      if(b.dataset.a==="load") loadOrder(n);
+      if(b.dataset.a==="view") viewOrder(n);
+      else if(b.dataset.a==="load") loadOrder(n);
       else deleteOrder(n);
     });
   });
 }
+function viewOrder(n){
+  const o=store.orders.find(x=>x.no===n); if(!o) return;
+  buildPdf(o.totals?o:legacySnapshot(o));
+  toast("Invoice "+invLabel(n)+" downloaded — check Files › Downloads");
+}
 function loadOrder(n){
   const o=store.orders.find(x=>x.no===n); if(!o) return;
   resetForm(false);
-  $("cName").value=o.customer.name||""; $("cPhone").value=o.customer.phone||"";
-  $("cEmail").value=o.customer.email||""; $("cCompany").value=o.customer.company||"";
-  $("cAddress").value=o.customer.address||""; $("cDate").value=o.date||todayISO();
-  payMethod=o.customer.pay||"";
+  const c=o.customer||{};
+  $("cName").value=c.name||""; $("cPhone").value=c.phone||"";
+  $("cEmail").value=c.email||""; $("cCompany").value=c.company||"";
+  $("cAddress").value=c.address||""; $("cDate").value=o.date||todayISO();
+  payMethod=c.pay||"";
   $("paySeg").querySelectorAll("button").forEach(x=>x.classList.toggle("on",x.dataset.v===payMethod));
   o.items.forEach(it=>{
     const i=PRODUCTS.findIndex(p=>p.name===it.name);
     if(i>=0){ qty[i]=it.qty; fulfil[i]=it.fulfil||""; paintRow(i); }
   });
-  $("shipping").value=o.shipping||""; $("discount").value=o.discount||"";
+  const t=o.totals||{};
+  $("shipping").value=(t.shipping!==undefined?t.shipping:o.shipping)||"";
+  $("expoPct").value=t.expoPct||"";
+  $("setPct").value=t.setPct||"";
   refreshTotals();
   window.scrollTo({top:0,behavior:"smooth"});
   toast("Order "+invLabel(n)+" loaded — creating a PDF will save it as a new invoice");
@@ -602,7 +670,7 @@ async function deleteOrder(n){
 
 /* ================= reset ================= */
 function resetForm(scroll=true){
-  ["cName","cPhone","cEmail","cCompany","cAddress","shipping","discount"].forEach(id=>$(id).value="");
+  ["cName","cPhone","cEmail","cCompany","cAddress","shipping","expoPct","setPct"].forEach(id=>$(id).value="");
   $("cDate").value=todayISO();
   payMethod="";
   $("paySeg").querySelectorAll("button").forEach(x=>x.classList.remove("on"));
@@ -617,7 +685,8 @@ buildProducts();
 $("appLabel").textContent="Tax Invoice · App "+APP_ID;
 $("cDate").value=todayISO();
 $("shipping").addEventListener("input",refreshTotals);
-$("discount").addEventListener("input",refreshTotals);
+$("expoPct").addEventListener("input",refreshTotals);
+$("setPct").addEventListener("input",refreshTotals);
 $("btnPdf").addEventListener("click",createInvoice);
 $("btnPdf2").addEventListener("click",createInvoice);
 $("btnNew").addEventListener("click",()=>resetForm());
