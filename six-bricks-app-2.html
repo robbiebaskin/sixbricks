@@ -676,7 +676,6 @@ function renderHistory(){
         </div>
         <div class="hbtns">
           <button type="button" data-a="view" data-n="${o.no}">View</button>
-          <button type="button" data-a="dl" data-n="${o.no}">Download</button>
           <button type="button" data-a="load" data-n="${o.no}">Load</button>
           <button type="button" data-a="del" data-n="${o.no}" style="color:var(--red)">Delete</button>
         </div>`;
@@ -686,7 +685,6 @@ function renderHistory(){
       b.addEventListener("click",()=>{
         const n=parseInt(b.dataset.n,10);
         if(b.dataset.a==="view") viewOrder(n);
-        else if(b.dataset.a==="dl") downloadOrder(n);
         else if(b.dataset.a==="load") loadOrder(n);
         else deleteOrder(n);
       });
@@ -696,10 +694,6 @@ function renderHistory(){
   ra.innerHTML='<button class="btn btn-ghost" type="button" id="btnRestore">Restore from Google Sheet</button>';
   host.appendChild(ra);
   ra.querySelector("#btnRestore").addEventListener("click",restoreFromSheet);
-}
-function orderDoc(n){
-  const o=store.orders.find(x=>x.no===n); if(!o) return null;
-  return buildPdf(o.totals?o:legacySnapshot(o));
 }
 let pdfjsReady=null;
 function loadPdfJs(){
@@ -756,14 +750,6 @@ function viewOrder(n){
   const o=store.orders.find(x=>x.no===n); if(!o) return;
   const doc=buildPdf(o.totals?o:legacySnapshot(o));
   openViewer(doc, `SixBricks_Invoice_${n}.pdf`, n, (o.customer||{}).email||"");
-}
-function downloadOrder(n){
-  const doc=orderDoc(n); if(!doc) return;
-  deliverPdf(doc, `SixBricks_Invoice_${n}.pdf`).then(how=>{
-    if(how==="cancelled") return;
-    if(how==="failed"){ toast("Could not create invoice "+invLabel(n)); return; }
-    toast("Invoice "+invLabel(n)+(how==="shared"?" ready":" downloaded — check Files › Downloads"));
-  });
 }
 function loadOrder(n){
   const o=store.orders.find(x=>x.no===n); if(!o) return;
