@@ -238,10 +238,13 @@
       <div class="field"><label for="expoPct">Expo discount — all products</label>
         <div class="money-input pct"><span>%</span><input type="number" id="expoPct" inputmode="decimal" min="0" max="100" step="0.5" placeholder="0"></div>
       </div>
-      <div class="field full"><label for="setPct">Set discount — complete sets only</label>
+      <div class="field"><label for="setPct">Set discount — complete sets only</label>
         <div class="money-input pct"><span>%</span><input type="number" id="setPct" inputmode="decimal" min="0" max="100" step="0.5" placeholder="0"></div>
-        <div class="hint" id="setHint"></div>
       </div>
+      <div class="field"><label for="customAmt">Custom discount (AUD)</label>
+        <div class="money-input"><span>$</span><input type="number" id="customAmt" inputmode="decimal" min="0" step="0.01" placeholder="0.00"></div>
+      </div>
+      <div class="field full"><div class="hint" id="setHint"></div></div>
     </div>
     <div class="breakdown" id="breakdown"></div>
     <div class="actions">
@@ -418,9 +421,10 @@ function calc(){
   const setGross = r2(PRODUCTS.reduce((s,p,i)=>s+(sets.includes(p.cat)?p.price*qty[i]:0),0));
   const setBase = r2(setGross*(1-expoPct/100));            // set value net of the expo discount
   const setAmt  = r2(setBase*setPct/100);                  // set discount on that net figure
-  const total = Math.max(0, r2(sub - setAmt - expoAmt + shipping));
+  const customAmt = num($("customAmt").value);             // flat dollar discount, applied last
+  const total = Math.max(0, r2(sub - setAmt - expoAmt - customAmt + shipping));
   const gst = r2(total/11);
-  return {sub, shipping, expoPct, expoAmt, setPct, setAmt, setBase, sets, total, gst};
+  return {sub, shipping, expoPct, expoAmt, setPct, setAmt, setBase, sets, customAmt, total, gst};
 }
 function refreshTotals(){
   const t=calc();
@@ -434,6 +438,7 @@ function refreshTotals(){
   const rows=[["Subtotal",fmt.format(t.sub),""]];
   if(t.expoAmt>0) rows.push([`Expo discount (${t.expoPct}%)`,"-"+fmt.format(t.expoAmt),"neg"]);
   if(t.setAmt>0)  rows.push([`Set discount (${t.setPct}% of ${fmt.format(t.setBase)})`,"-"+fmt.format(t.setAmt),"neg"]);
+  if(t.customAmt>0) rows.push(["Custom discount","-"+fmt.format(t.customAmt),"neg"]);
   rows.push(["Shipping",fmt.format(t.shipping),""]);
   rows.push(["Total",fmt.format(t.total),"big"]);
   rows.push(["GST incl.",fmt.format(t.gst),"mut"]);
@@ -599,6 +604,7 @@ function buildPdf(o){
   trow("Subtotal",fmt.format(t.sub));
   if(t.expoAmt>0) trow(`Expo discount (${t.expoPct}%)`,"-"+fmt.format(t.expoAmt));
   if(t.setAmt>0)  trow(`Set discount (${t.setPct}%)`,"-"+fmt.format(t.setAmt));
+  if(t.customAmt>0) trow("Custom discount","-"+fmt.format(t.customAmt));
   if(t.legacyDiscount>0) trow("Discount","-"+fmt.format(t.legacyDiscount));
   trow("Shipping",fmt.format(t.shipping));
   doc.setDrawColor(...LINE); doc.line(tx,ty-10,W-M,ty-10); ty+=2;
@@ -769,6 +775,7 @@ function loadOrder(n){
   $("shipping").value=(t.shipping!==undefined?t.shipping:o.shipping)||"";
   $("expoPct").value=t.expoPct||"";
   $("setPct").value=t.setPct||"";
+  $("customAmt").value=t.customAmt||"";
   refreshTotals();
   window.scrollTo({top:0,behavior:"smooth"});
   toast("Order "+invLabel(n)+" loaded — creating a PDF will save it as a new invoice");
@@ -784,7 +791,7 @@ async function deleteOrder(n){
 
 /* ================= reset ================= */
 function resetForm(scroll=true){
-  ["cName","cPhone","cEmail","cCompany","cAddress","cSuburb","shipping","expoPct","setPct"].forEach(id=>$(id).value="");
+  ["cName","cPhone","cEmail","cCompany","cAddress","cSuburb","shipping","expoPct","setPct","customAmt"].forEach(id=>$(id).value="");
   $("cDate").value=todayISO();
   payMethod="";
   $("paySeg").querySelectorAll("button").forEach(x=>x.classList.remove("on"));
@@ -952,6 +959,7 @@ $("cDate").value=todayISO();
 $("shipping").addEventListener("input",refreshTotals);
 $("expoPct").addEventListener("input",refreshTotals);
 $("setPct").addEventListener("input",refreshTotals);
+$("customAmt").addEventListener("input",refreshTotals);
 $("btnPdf").addEventListener("click",createInvoice);
 $("btnPdf2").addEventListener("click",createInvoice);
 $("btnNew").addEventListener("click",()=>resetForm());
