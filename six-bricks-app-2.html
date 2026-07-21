@@ -571,7 +571,7 @@ function buildPdf(o){
   /* items table */
   doc.autoTable({
     startY:y+86, margin:{left:M,right:M},
-    head:[["Product","Qty","T/S","Unit price","Line total"]],
+    head:[["Product","Qty","Take/Ship","Unit price","Line total"]],
     body:o.items.map(x=>[x.name,String(x.qty),x.fulfil==="T"?"Take":x.fulfil==="S"?"Ship":"—",fmt.format(x.price),fmt.format(x.price*x.qty)]),
     theme:"grid",
     styles:{font:"helvetica",fontSize:9.5,textColor:INK,lineColor:LINE,lineWidth:.6,cellPadding:6},
@@ -579,7 +579,7 @@ function buildPdf(o){
     columnStyles:{
       0:{cellWidth:"auto"},
       1:{halign:"center",cellWidth:30},
-      2:{halign:"center",cellWidth:44},
+      2:{halign:"center",cellWidth:58},
       3:{halign:"right",cellWidth:70},
       4:{halign:"right",cellWidth:80},
     },
