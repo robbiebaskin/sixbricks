@@ -385,6 +385,9 @@ async function loadStore(){
   renderHistory();
   renderSyncStatus();
   flushQueue();
+  if(store.orders.length===0 && invoiceNo===START_NO && getSyncKey() && navigator.onLine){
+    restoreFromSheet();   // fresh store (new device / wiped / private mode) — pull everything back
+  }
 }
 async function saveStore(){
   try{
@@ -850,7 +853,15 @@ $("cSuburb").addEventListener("blur",()=>setTimeout(acHide,200));
 /* ================= Google Sheet sync ================= */
 const SYNC_URL="https://script.google.com/macros/s/AKfycbwxJYgoV0FTRqCu1GWlKWTXxsxuEw-NmN9shSyLycGqe4LzjGJDez_Ug8hXbX6txLln/exec";
 const SYNC_KEY_STORE="sixbricks-sync-key";
-function getSyncKey(){ try{ return localStorage.getItem(SYNC_KEY_STORE)||""; }catch(e){ return ""; } }
+function getSyncKey(){
+  const m=(location.hash||"").match(/[#&]k=([^&]+)/);   // bookmark as ...app-1.html#k=KEY
+  if(m){
+    const k=decodeURIComponent(m[1]);
+    try{ localStorage.setItem(SYNC_KEY_STORE,k); }catch(e){}
+    return k;
+  }
+  try{ return localStorage.getItem(SYNC_KEY_STORE)||""; }catch(e){ return ""; }
+}
 function ensureSyncKey(){
   let k=getSyncKey();
   if(!k){
@@ -922,7 +933,9 @@ async function restoreFromSheet(){
     invoiceNo=store.counter;
     $("invNo").textContent=invLabel(invoiceNo);
     renderHistory(); renderSyncStatus();
-    toast("Restored "+restored.length+" invoice"+(restored.length===1?"":"s")+" — next number "+invLabel(invoiceNo));
+    toast(restored.length
+      ? "Restored "+restored.length+" invoice"+(restored.length===1?"":"s")+" — next number "+invLabel(invoiceNo)
+      : "Nothing in the Google Sheet to restore yet");
   }catch(e){ toast("Restore failed — check the connection and key"); }
 }
 
