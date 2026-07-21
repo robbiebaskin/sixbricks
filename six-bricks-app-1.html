@@ -854,7 +854,7 @@ function getSyncKey(){
 function ensureSyncKey(){
   let k=getSyncKey();
   if(!k){
-    k=(prompt("Enter the sync key for Google Sheet logging (the SYNC_KEY set in the Apps Script). Cancel to skip syncing on this iPad for now.")||"").trim();
+    k=(prompt("Enter password")||"").trim();
     if(k){ try{ localStorage.setItem(SYNC_KEY_STORE,k); }catch(e){} }
   }
   return k;
