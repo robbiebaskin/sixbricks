@@ -346,6 +346,7 @@ let fulfil = new Array(PRODUCTS.length).fill("");   // "", "T", "S"
 let payMethod = "";
 let invoiceNo = START_NO;
 let store = null;          // {counter, orders:[]}
+let editingNo = null;      // invoice currently open in the form (created or loaded)
 const STORAGE_KEY = "sixbricks-orders-app"+APP_ID;
 const fmt = new Intl.NumberFormat("en-AU",{style:"currency",currency:"AUD"});
 
@@ -367,6 +368,11 @@ function fmtDateAU(iso){
   const [y,m,d]=iso.split("-"); return `${d}/${m}/${y}`;
 }
 function invLabel(n){ return "#"+n; }
+function setEditingState(n){
+  editingNo=n;
+  const label=n?"Update invoice":"Create invoice";
+  $("btnPdf").textContent=label; $("btnPdf2").textContent=label;
+}
 function esc(v){ return String(v==null?"":v).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c])); }
 
 /* ================= storage (best-effort) ================= */
@@ -505,11 +511,11 @@ $("paySeg").querySelectorAll("button").forEach(b=>{
 });
 
 /* ================= order snapshot ================= */
-function snapshotFromForm(){
+function snapshotFromForm(no){
   const t=calc();
   const items=PRODUCTS.map((p,i)=>({name:p.name,price:p.price,qty:qty[i],fulfil:fulfil[i]})).filter(x=>x.qty>0);
   return {
-    no:invoiceNo,
+    no:no,
     date:$("cDate").value||todayISO(),
     customer:{
       name:$("cName").value, phone:$("cPhone").value, email:$("cEmail").value,
@@ -649,8 +655,23 @@ async function deliverPdf(doc, fname){
 async function createInvoice(){
   if(!qty.some(v=>v>0)){ toast("Add at least one product first"); return; }
   ensureSyncKey();
+  if(editingNo){
+    /* update the open invoice in place — same number, re-logged to the sheet */
+    const o=snapshotFromForm(editingNo);
+    const idx=store.orders.findIndex(x=>x.no===editingNo);
+    if(idx>=0) store.orders[idx]=o; else store.orders.push(o);
+    store.queue=store.queue||[];
+    store.queue.push({uid:APP_ID+"-"+o.no+"-"+Date.now(), app:APP_ID, no:o.no, date:o.date,
+                      customer:o.customer, items:o.items, totals:o.totals});
+    await saveStore();
+    renderHistory();
+    openViewer(buildPdf(o), `SixBricks_Invoice_${o.no}.pdf`, o.no, o.customer.email||"");
+    flushQueue();
+    toast("Invoice "+invLabel(o.no)+" updated");
+    return;
+  }
   await guardCounter();
-  const o=snapshotFromForm();
+  const o=snapshotFromForm(invoiceNo);
   store.orders.push(o);
   store.queue=store.queue||[];
   store.queue.push({uid:APP_ID+"-"+o.no+"-"+Date.now(), app:APP_ID, no:o.no, date:o.date,
@@ -661,6 +682,7 @@ async function createInvoice(){
   invoiceNo=store.counter;
   $("invNo").textContent=invLabel(invoiceNo);
   renderHistory();
+  setEditingState(issuedNo);
   openViewer(buildPdf(o), `SixBricks_Invoice_${issuedNo}.pdf`, issuedNo, o.customer.email||"");
   flushQueue();
   toast("Invoice "+invLabel(issuedNo)+" created — tap Download to save or share it");
@@ -777,11 +799,13 @@ function loadOrder(n){
   $("setPct").value=t.setPct||"";
   $("customAmt").value=t.customAmt||"";
   refreshTotals();
+  setEditingState(n);
   window.scrollTo({top:0,behavior:"smooth"});
-  toast("Order "+invLabel(n)+" loaded — creating a PDF will save it as a new invoice");
+  toast("Invoice "+invLabel(n)+" loaded for editing — changes save to the same number");
 }
 async function deleteOrder(n){
   store.orders=store.orders.filter(x=>x.no!==n);
+  if(n===editingNo) setEditingState(null);
   store.queue=store.queue||[];
   store.queue.push({action:"delete", uid:"del-"+APP_ID+"-"+n+"-"+Date.now(), app:APP_ID, no:n});
   await saveStore(); renderHistory(); renderSyncStatus();
@@ -797,6 +821,7 @@ function resetForm(scroll=true){
   $("paySeg").querySelectorAll("button").forEach(x=>x.classList.remove("on"));
   qty.fill(0); fulfil.fill("");
   PRODUCTS.forEach((_,i)=>paintRow(i));
+  setEditingState(null);
   refreshTotals();
   if(scroll) window.scrollTo({top:0,behavior:"smooth"});
 }
@@ -933,13 +958,13 @@ async function restoreFromSheet(){
     const res=await fetch(SYNC_URL+"?k="+encodeURIComponent(key)+"&app="+APP_ID);
     const d=await res.json();
     if(d.error){ toast("Restore denied — check the sync key"); return; }
-    const restored=(d.orders||[]).map(o=>({
-      no:parseInt(String(o.no).replace(/[^0-9]/g,""),10)||o.no,
-      date:o.date, customer:o.customer||{}, items:o.items||[], totals:o.totals||{}
-    }));
-    const have=new Set(restored.map(o=>o.no));
-    store.orders.forEach(o=>{ if(!have.has(o.no)) restored.push(o); });   // keep local-only orders
-    restored.sort((a,b)=>a.no-b.no);
+    const byNo=new Map();
+    (d.orders||[]).forEach(o=>{
+      const no=parseInt(String(o.no).replace(/[^0-9]/g,""),10)||o.no;
+      byNo.set(no,{no, date:o.date, customer:o.customer||{}, items:o.items||[], totals:o.totals||{}});
+    });                                                                    // later rows win
+    store.orders.forEach(o=>{ if(!byNo.has(o.no)) byNo.set(o.no,o); });    // keep local-only orders
+    const restored=[...byNo.values()].sort((a,b)=>a.no-b.no);
     store.orders=restored;
     store.counter=Math.max(store.counter,(d.counter||0)+1,START_NO);
     await saveStore();
