@@ -654,7 +654,7 @@ async function createInvoice(){
   invoiceNo=store.counter;
   $("invNo").textContent=invLabel(invoiceNo);
   renderHistory();
-  openViewer(buildPdf(o), `SixBricks_Invoice_${issuedNo}.pdf`, issuedNo);
+  openViewer(buildPdf(o), `SixBricks_Invoice_${issuedNo}.pdf`, issuedNo, o.customer.email||"");
   flushQueue();
   toast("Invoice "+invLabel(issuedNo)+" created — tap Download to save or share it");
 }
@@ -713,12 +713,13 @@ function loadPdfJs(){
   });
   return pdfjsReady;
 }
-async function openViewer(doc, fname, n){
+async function openViewer(doc, fname, n, email){
   const ov=document.createElement("div"); ov.className="viewer";
   ov.innerHTML=`
     <div class="viewer-bar">
       <b>Invoice ${invLabel(n)}</b>
       <div class="vbtns">
+        <button type="button" class="btn btn-ghost" data-v="email">Email</button>
         <button type="button" class="btn btn-ghost" data-v="dl">Download</button>
         <button type="button" class="btn btn-primary" data-v="close">Close</button>
       </div>
@@ -727,6 +728,7 @@ async function openViewer(doc, fname, n){
   document.body.appendChild(ov);
   ov.querySelector('[data-v="close"]').addEventListener("click",()=>ov.remove());
   ov.querySelector('[data-v="dl"]').addEventListener("click",()=>{ deliverPdf(doc,fname); });
+  ov.querySelector('[data-v="email"]').addEventListener("click",()=>{ emailInvoice(doc,fname,n,email); });
   const body=ov.querySelector(".viewer-body");
   try{
     await loadPdfJs();
@@ -751,8 +753,9 @@ async function openViewer(doc, fname, n){
   }
 }
 function viewOrder(n){
-  const doc=orderDoc(n); if(!doc) return;
-  openViewer(doc, `SixBricks_Invoice_${n}.pdf`, n);
+  const o=store.orders.find(x=>x.no===n); if(!o) return;
+  const doc=buildPdf(o.totals?o:legacySnapshot(o));
+  openViewer(doc, `SixBricks_Invoice_${n}.pdf`, n, (o.customer||{}).email||"");
 }
 function downloadOrder(n){
   const doc=orderDoc(n); if(!doc) return;
@@ -912,6 +915,22 @@ async function guardCounter(){
       toast("Invoice numbering resumed from the Google Sheet at "+invLabel(invoiceNo));
     }
   }catch(e){ /* offline — local counter stands */ }
+}
+async function emailInvoice(doc, fname, n, email){
+  const key=ensureSyncKey(); if(!key){ toast("Sync key needed to email"); return; }
+  const to=(prompt("Email invoice "+invLabel(n)+" to:", (email||"").trim())||"").trim();
+  if(!to) return;
+  toast("Sending\u2026");
+  try{
+    const b64=doc.output("datauristring").split(",")[1];
+    const res=await fetch(SYNC_URL,{method:"POST",
+      body:JSON.stringify({action:"email",k:key,to:to,no:n,fname:fname,pdf:b64})});
+    const txt=await res.text();
+    if(txt.indexOf("sent")>=0) toast("Invoice "+invLabel(n)+" emailed to "+to);
+    else if(txt.indexOf("denied")>=0) toast("Email denied \u2014 check the sync key");
+    else if(txt.indexOf("bad-email")>=0) toast("That email address doesn't look valid");
+    else toast("Email failed \u2014 use Download and send it manually");
+  }catch(e){ toast("Email failed \u2014 check the connection"); }
 }
 async function restoreFromSheet(){
   const key=ensureSyncKey(); if(!key){ toast("Sync key needed to restore"); return; }
