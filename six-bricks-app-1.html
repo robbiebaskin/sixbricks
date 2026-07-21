@@ -364,6 +364,7 @@ function fmtDateAU(iso){
   const [y,m,d]=iso.split("-"); return `${d}/${m}/${y}`;
 }
 function invLabel(n){ return "#"+n; }
+function esc(v){ return String(v==null?"":v).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c])); }
 
 /* ================= storage (best-effort) ================= */
 async function loadStore(){
@@ -668,11 +669,11 @@ function renderHistory(){
     host.innerHTML="";
     [...store.orders].reverse().forEach(o=>{
       const div=document.createElement("div"); div.className="hist-item";
-      const who=(o.customer&&(o.customer.name||o.customer.company))||"No name";
+      const who=esc((o.customer&&(o.customer.name||o.customer.company))||"No name");
       const total=o.totals?o.totals.total:(o.total||0);
       div.innerHTML=`
         <div class="meta"><b>${invLabel(o.no)}</b> · ${who}
-          <div>${fmtDateAU(o.date)} · ${o.items.length} line item${o.items.length>1?"s":""} · ${fmt.format(total)}</div>
+          <div>${esc(fmtDateAU(o.date))} · ${o.items.length} line item${o.items.length>1?"s":""} · ${fmt.format(total)}</div>
         </div>
         <div class="hbtns">
           <button type="button" data-a="view" data-n="${o.no}">View</button>
