@@ -774,7 +774,11 @@ function loadOrder(n){
 }
 async function deleteOrder(n){
   store.orders=store.orders.filter(x=>x.no!==n);
-  await saveStore(); renderHistory(); toast("Order "+invLabel(n)+" deleted");
+  store.queue=store.queue||[];
+  store.queue.push({action:"delete", uid:"del-"+APP_ID+"-"+n+"-"+Date.now(), app:APP_ID, no:n});
+  await saveStore(); renderHistory(); renderSyncStatus();
+  flushQueue();
+  toast("Order "+invLabel(n)+" deleted \u2014 will be marked deleted in the Google Sheet");
 }
 
 /* ================= reset ================= */
