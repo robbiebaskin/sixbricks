@@ -917,20 +917,16 @@ async function guardCounter(){
   }catch(e){ /* offline — local counter stands */ }
 }
 async function emailInvoice(doc, fname, n, email){
-  const key=ensureSyncKey(); if(!key){ toast("Sync key needed to email"); return; }
-  const to=(prompt("Email invoice "+invLabel(n)+" to:", (email||"").trim())||"").trim();
-  if(!to) return;
-  toast("Sending\u2026");
-  try{
-    const b64=doc.output("datauristring").split(",")[1];
-    const res=await fetch(SYNC_URL,{method:"POST",
-      body:JSON.stringify({action:"email",k:key,to:to,no:n,fname:fname,pdf:b64})});
-    const txt=await res.text();
-    if(txt.indexOf("sent")>=0) toast("Invoice "+invLabel(n)+" emailed to "+to);
-    else if(txt.indexOf("denied")>=0) toast("Email denied \u2014 check the sync key");
-    else if(txt.indexOf("bad-email")>=0) toast("That email address doesn't look valid");
-    else toast("Email failed \u2014 use Download and send it manually");
-  }catch(e){ toast("Email failed \u2014 check the connection"); }
+  /* Web apps can't open Mail with attachment + recipient together, so:
+     copy the address, open the share sheet with the PDF, user picks Mail and pastes. */
+  const to=(email||"").trim();
+  if(to){
+    try{ await navigator.clipboard.writeText(to); toast(to+" copied \u2014 choose Mail in the share sheet, then paste into To"); }
+    catch(e){ toast("Choose Mail in the share sheet \u2014 send to "+to); }
+  }else{
+    toast("No email on this invoice \u2014 choose Mail in the share sheet");
+  }
+  deliverPdf(doc,fname);
 }
 async function restoreFromSheet(){
   const key=ensureSyncKey(); if(!key){ toast("Sync key needed to restore"); return; }
