@@ -743,14 +743,12 @@ async function openViewer(doc, fname, n, email){
       <b>Invoice ${invLabel(n)}</b>
       <div class="vbtns">
         <button type="button" class="btn btn-ghost" data-v="email">Email</button>
-        <button type="button" class="btn btn-ghost" data-v="dl">Download</button>
         <button type="button" class="btn btn-primary" data-v="close">Close</button>
       </div>
     </div>
     <div class="viewer-body"></div>`;
   document.body.appendChild(ov);
   ov.querySelector('[data-v="close"]').addEventListener("click",()=>ov.remove());
-  ov.querySelector('[data-v="dl"]').addEventListener("click",()=>{ deliverPdf(doc,fname); });
   ov.querySelector('[data-v="email"]').addEventListener("click",()=>{ emailInvoice(doc,fname,n,email); });
   const body=ov.querySelector(".viewer-body");
   try{
