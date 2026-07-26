@@ -142,6 +142,9 @@
   .empty{color:var(--muted);font-size:.9rem;padding:8px 4px}
   .note{color:var(--muted);font-size:.8rem;margin-top:10px}
   .hint{color:var(--muted);font-size:.78rem}
+  .money-input.mini{max-width:120px;margin-top:4px}
+  .money-input.mini input{min-height:38px;padding:6px 10px 6px 24px;font-size:.9rem}
+  .money-input.mini span{left:10px}
   .money-input.pct span{left:auto;right:12px}
   .money-input.pct input{padding-left:12px;padding-right:32px}
   .prod-subtotal{display:flex;justify-content:space-between;align-items:center;border-top:2px solid var(--line);margin-top:10px;padding:12px 4px 2px;font-weight:600}
@@ -321,11 +324,14 @@ const CATEGORIES = [
     ["Six Bricks Online Training (Individual Modules)",95],
     ["Six Bricks Accreditation",250],
   ]},
+  { name:"Other", color:"#5f7186", items:[
+    ["Miscellaneous",0,true],          // price entered by the user
+  ]},
 ];
 const SET_CATS = ["Story Kits","Story Books","Activity Booklets"];
 
 const PRODUCTS = [];
-CATEGORIES.forEach(c => c.items.forEach(([name,price]) => PRODUCTS.push({name, price, cat:c.name})));
+CATEGORIES.forEach(c => c.items.forEach(([name,price,editable]) => PRODUCTS.push({name, price, cat:c.name, editable:!!editable})));
 
 const COMPANY = {
   legal:"The Focus Learning Group Pty Ltd",
@@ -466,7 +472,9 @@ function buildProducts(){
       row.innerHTML=`
         <div class="pinfo">
           <div class="pname">${p.name}</div>
-          <div class="punit">${fmt.format(p.price)} each</div>
+          ${p.editable
+            ? `<div class="money-input mini"><span>$</span><input type="number" id="mp${i}" inputmode="decimal" min="0" step="0.01" placeholder="0.00"></div>`
+            : `<div class="punit">${fmt.format(p.price)} each</div>`}
         </div>
         <div class="controls">
           <div class="ts">
@@ -489,6 +497,9 @@ function buildProducts(){
     $("dec"+i).addEventListener("click",()=>setQty(i,Math.max(0,qty[i]-1)));
     $("ft"+i).addEventListener("click",()=>setFulfil(i,"T"));
     $("fs"+i).addEventListener("click",()=>setFulfil(i,"S"));
+    if(p.editable) $("mp"+i).addEventListener("input",()=>{
+      PRODUCTS[i].price=num($("mp"+i).value); paintRow(i); refreshTotals();
+    });
     paintRow(i);
   });
 }
@@ -789,7 +800,11 @@ function loadOrder(n){
   $("paySeg").querySelectorAll("button").forEach(x=>x.classList.toggle("on",x.dataset.v===payMethod));
   o.items.forEach(it=>{
     const i=PRODUCTS.findIndex(p=>p.name===it.name);
-    if(i>=0){ qty[i]=it.qty; fulfil[i]=it.fulfil||""; paintRow(i); }
+    if(i>=0){
+      qty[i]=it.qty; fulfil[i]=it.fulfil||"";
+      if(PRODUCTS[i].editable){ PRODUCTS[i].price=it.price||0; const el=$("mp"+i); if(el) el.value=it.price||""; }
+      paintRow(i);
+    }
   });
   const t=o.totals||{};
   $("shipping").value=(t.shipping!==undefined?t.shipping:o.shipping)||"";
@@ -818,6 +833,7 @@ function resetForm(scroll=true){
   payMethod="";
   $("paySeg").querySelectorAll("button").forEach(x=>x.classList.remove("on"));
   qty.fill(0); fulfil.fill("");
+  PRODUCTS.forEach((p,i)=>{ if(p.editable){ p.price=0; const el=$("mp"+i); if(el) el.value=""; } });
   PRODUCTS.forEach((_,i)=>paintRow(i));
   setEditingState(null);
   refreshTotals();
