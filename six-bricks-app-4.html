@@ -142,7 +142,9 @@
   .empty{color:var(--muted);font-size:.9rem;padding:8px 4px}
   .note{color:var(--muted);font-size:.8rem;margin-top:10px}
   .hint{color:var(--muted);font-size:.78rem}
-  .money-input.mini{max-width:120px;margin-top:4px}
+  .misc-fields{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:5px}
+  .misc-desc{flex:1 1 150px;min-width:130px;min-height:38px;padding:6px 10px;font-size:.9rem;border:1px solid var(--line);border-radius:10px;font-family:inherit;color:var(--ink)}
+  .money-input.mini{max-width:110px;margin-top:0}
   .money-input.mini input{min-height:38px;padding:6px 10px 6px 24px;font-size:.9rem}
   .money-input.mini span{left:10px}
   .money-input.pct span{left:auto;right:12px}
@@ -473,7 +475,10 @@ function buildProducts(){
         <div class="pinfo">
           <div class="pname">${p.name}</div>
           ${p.editable
-            ? `<div class="money-input mini"><span>$</span><input type="number" id="mp${i}" inputmode="decimal" min="0" step="0.01" placeholder="0.00"></div>`
+            ? `<div class="misc-fields">
+                 <input type="text" class="misc-desc" id="md${i}" autocomplete="off" placeholder="Description">
+                 <div class="money-input mini"><span>$</span><input type="number" id="mp${i}" inputmode="decimal" min="0" step="0.01" placeholder="0.00"></div>
+               </div>`
             : `<div class="punit">${fmt.format(p.price)} each</div>`}
         </div>
         <div class="controls">
@@ -497,9 +502,12 @@ function buildProducts(){
     $("dec"+i).addEventListener("click",()=>setQty(i,Math.max(0,qty[i]-1)));
     $("ft"+i).addEventListener("click",()=>setFulfil(i,"T"));
     $("fs"+i).addEventListener("click",()=>setFulfil(i,"S"));
-    if(p.editable) $("mp"+i).addEventListener("input",()=>{
-      PRODUCTS[i].price=num($("mp"+i).value); paintRow(i); refreshTotals();
-    });
+    if(p.editable){
+      $("mp"+i).addEventListener("input",()=>{
+        PRODUCTS[i].price=num($("mp"+i).value); paintRow(i); refreshTotals();
+      });
+      $("md"+i).addEventListener("input",()=>{ PRODUCTS[i].desc=$("md"+i).value.trim(); });
+    }
     paintRow(i);
   });
 }
@@ -524,7 +532,11 @@ $("paySeg").querySelectorAll("button").forEach(b=>{
 /* ================= order snapshot ================= */
 function snapshotFromForm(no){
   const t=calc();
-  const items=PRODUCTS.map((p,i)=>({name:p.name,price:p.price,qty:qty[i],fulfil:fulfil[i]})).filter(x=>x.qty>0);
+  const items=PRODUCTS.map((p,i)=>{
+    const it={name:(p.editable&&p.desc)?p.desc:p.name, price:p.price, qty:qty[i], fulfil:fulfil[i]};
+    if(p.editable){ it.misc=true; it.desc=p.desc||""; }
+    return it;
+  }).filter(x=>x.qty>0);
   return {
     no:no,
     date:$("cDate").value||todayISO(),
@@ -799,10 +811,14 @@ function loadOrder(n){
   payMethod=c.pay||"";
   $("paySeg").querySelectorAll("button").forEach(x=>x.classList.toggle("on",x.dataset.v===payMethod));
   o.items.forEach(it=>{
-    const i=PRODUCTS.findIndex(p=>p.name===it.name);
+    const i=it.misc ? PRODUCTS.findIndex(p=>p.editable) : PRODUCTS.findIndex(p=>p.name===it.name);
     if(i>=0){
       qty[i]=it.qty; fulfil[i]=it.fulfil||"";
-      if(PRODUCTS[i].editable){ PRODUCTS[i].price=it.price||0; const el=$("mp"+i); if(el) el.value=it.price||""; }
+      if(PRODUCTS[i].editable){
+        PRODUCTS[i].price=it.price||0; PRODUCTS[i].desc=it.desc||"";
+        const pe=$("mp"+i); if(pe) pe.value=it.price||"";
+        const de=$("md"+i); if(de) de.value=it.desc||"";
+      }
       paintRow(i);
     }
   });
@@ -833,7 +849,11 @@ function resetForm(scroll=true){
   payMethod="";
   $("paySeg").querySelectorAll("button").forEach(x=>x.classList.remove("on"));
   qty.fill(0); fulfil.fill("");
-  PRODUCTS.forEach((p,i)=>{ if(p.editable){ p.price=0; const el=$("mp"+i); if(el) el.value=""; } });
+  PRODUCTS.forEach((p,i)=>{ if(p.editable){
+    p.price=0; p.desc="";
+    const pe=$("mp"+i); if(pe) pe.value="";
+    const de=$("md"+i); if(de) de.value="";
+  } });
   PRODUCTS.forEach((_,i)=>paintRow(i));
   setEditingState(null);
   refreshTotals();
