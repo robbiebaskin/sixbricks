@@ -142,6 +142,12 @@
   .empty{color:var(--muted);font-size:.9rem;padding:8px 4px}
   .note{color:var(--muted);font-size:.8rem;margin-top:10px}
   .hint{color:var(--muted);font-size:.78rem}
+  .quote-box{border:1px solid var(--line);border-radius:12px;padding:12px;margin-bottom:14px;display:flex;flex-direction:column;gap:10px}
+  .parcel-row{display:grid;grid-template-columns:repeat(4,1fr);gap:8px}
+  .parcel-row input{text-align:center;padding:10px 6px}
+  .q-item{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:11px 10px;border:1px solid var(--line);border-radius:10px;cursor:pointer;margin-top:6px}
+  .q-item.on{border-color:var(--blue);background:#eef7fc}
+  .q-item b:last-child{font-variant-numeric:tabular-nums;white-space:nowrap}
   .misc-fields{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:5px}
   .misc-desc{flex:1 1 150px;min-width:130px;min-height:38px;padding:6px 10px;font-size:.9rem;border:1px solid var(--line);border-radius:10px;font-family:inherit;color:var(--ink)}
   .money-input.mini{max-width:110px;margin-top:0}
@@ -236,6 +242,17 @@
   <!-- Charges -->
   <section class="card charges">
     <h2><span class="dot" style="background:var(--green)"></span>Shipping &amp; discount</h2>
+    <div class="quote-box">
+      <label>Shipping estimate — parcel</label>
+      <div class="parcel-row">
+        <div class="field"><input type="number" id="pWt" inputmode="decimal" min="0" step="0.1" placeholder="kg"><span class="hint">Weight kg</span></div>
+        <div class="field"><input type="number" id="pLen" inputmode="numeric" min="0" placeholder="cm"><span class="hint">Length cm</span></div>
+        <div class="field"><input type="number" id="pWid" inputmode="numeric" min="0" placeholder="cm"><span class="hint">Width cm</span></div>
+        <div class="field"><input type="number" id="pHt" inputmode="numeric" min="0" placeholder="cm"><span class="hint">Height cm</span></div>
+      </div>
+      <button class="btn btn-ghost" id="btnQuote" type="button">Get shipping quotes</button>
+      <div id="quoteList"></div>
+    </div>
     <div class="grid">
       <div class="field"><label for="shipping">Shipping (AUD)</label>
         <div class="money-input"><span>$</span><input type="number" id="shipping" inputmode="decimal" min="0" step="0.01" placeholder="0.00"></div>
@@ -1011,6 +1028,62 @@ async function restoreFromSheet(){
   }catch(e){ toast("Restore failed — check the connection and key"); }
 }
 
+/* ================= shipping quotes (Interparcel via Apps Script) ================= */
+function parseDest(){
+  const m=($("cSuburb").value||"").trim().match(/^(.+?)\s+(NSW|VIC|QLD|SA|WA|TAS|NT|ACT)\s+(\d{4})$/i);
+  return m?{city:m[1],state:m[2].toUpperCase(),postcode:m[3]}:null;
+}
+function transit(s){
+  if(typeof s.daysTo!=="number" || s.daysTo<=0) return "";
+  return "Transit "+(s.daysFrom&&s.daysFrom!==s.daysTo?s.daysFrom+"\u2013":"")+s.daysTo+" day"+(s.daysTo===1?"":"s");
+}
+async function getQuotes(){
+  const dest=parseDest();
+  if(!dest){ toast("Pick the delivery suburb from the suggestions first"); $("cSuburb").focus(); return; }
+  const parcel={weight:parseFloat($("pWt").value),length:parseFloat($("pLen").value),
+                width:parseFloat($("pWid").value),height:parseFloat($("pHt").value)};
+  if(![parcel.weight,parcel.length,parcel.width,parcel.height].every(v=>isFinite(v)&&v>0)){
+    toast("Enter the parcel weight and dimensions"); return;
+  }
+  const key=ensureSyncKey(); if(!key){ toast("Password needed for shipping quotes"); return; }
+  try{ localStorage.setItem("sixbricks-parcel",JSON.stringify(parcel)); }catch(e){}
+  const host=$("quoteList");
+  host.innerHTML='<div class="hint">Getting quotes\u2026</div>';
+  try{
+    const res=await fetch(SYNC_URL,{method:"POST",body:JSON.stringify({action:"quote",k:key,delivery:dest,parcel})});
+    const txt=await res.text();
+    if(txt==="denied"){ host.innerHTML='<div class="hint">Password incorrect \u2014 quotes unavailable.</div>'; return; }
+    const d=JSON.parse(txt);
+    if(d.error){
+      const msg={ "not-configured":"Shipping quotes aren't set up in the Apps Script yet.",
+                  "bad-address":"Delivery suburb/postcode not recognised.",
+                  "bad-parcel":"Check the parcel weight and dimensions." }[d.error]
+                || ("Interparcel couldn't quote"+(d.message?": "+d.message:"."));
+      host.innerHTML=`<div class="hint">${esc(msg)}</div>`; return;
+    }
+    const svc=d.services||[];
+    if(!svc.length){ host.innerHTML='<div class="hint">No services available for this parcel and destination.</div>'; return; }
+    host.innerHTML='<div class="hint">Tap a service to use its price as shipping:</div>'+svc.map((s,i)=>`
+      <div class="q-item" data-i="${i}">
+        <div><b>${esc(s.carrier)}</b> ${esc(s.service)}
+          <div class="hint">${esc([transit(s), s.pickup].filter(Boolean).join(" \u00b7 "))}</div></div>
+        <b>${fmt.format(s.price)}</b>
+      </div>`).join("");
+    host.querySelectorAll(".q-item").forEach(el=>el.addEventListener("click",()=>{
+      const s=svc[+el.dataset.i];
+      $("shipping").value=s.price.toFixed(2); refreshTotals();
+      host.querySelectorAll(".q-item").forEach(x=>x.classList.toggle("on",x===el));
+      toast("Shipping set to "+fmt.format(s.price)+" \u2014 edit it if you add a margin");
+    }));
+  }catch(e){ host.innerHTML='<div class="hint">Could not get quotes \u2014 check the connection.</div>'; }
+}
+function prefillParcel(){
+  try{
+    const p=JSON.parse(localStorage.getItem("sixbricks-parcel")||"null"); if(!p) return;
+    $("pWt").value=p.weight||""; $("pLen").value=p.length||""; $("pWid").value=p.width||""; $("pHt").value=p.height||"";
+  }catch(e){}
+}
+
 /* ================= init ================= */
 buildProducts();
 $("appLabel").textContent="Tax Invoice · App "+APP_ID;
@@ -1019,6 +1092,8 @@ $("shipping").addEventListener("input",refreshTotals);
 $("expoPct").addEventListener("input",refreshTotals);
 $("setPct").addEventListener("input",refreshTotals);
 $("customAmt").addEventListener("input",refreshTotals);
+$("btnQuote").addEventListener("click",getQuotes);
+prefillParcel();
 $("btnPdf").addEventListener("click",createInvoice);
 $("btnPdf2").addEventListener("click",createInvoice);
 $("btnNew").addEventListener("click",()=>resetForm());
