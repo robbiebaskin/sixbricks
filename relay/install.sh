@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Six Bricks — Interparcel relay installer for Ubuntu 24.04 (e.g. AWS Lightsail).
+# Six Bricks — Interparcel relay installer for Ubuntu 24.04 (Oracle Cloud or AWS Lightsail).
 # Run AFTER attaching the static IP:
 #   curl -fsSL https://raw.githubusercontent.com/robbiebaskin/sixbricks/main/relay/install.sh | sudo bash
 # Optional: use your own domain instead of sslip.io (point its A record at the static IP first):
@@ -66,6 +66,17 @@ PrivateTmp=true
 WantedBy=multi-user.target
 UNIT
 
+# Oracle Cloud's Ubuntu images block every inbound port except SSH at the OS firewall.
+# Open 80 (certificate issuance) and 443 (HTTPS) there too.
+if iptables -S INPUT 2>/dev/null | grep -q -- '-j REJECT'; then
+  echo "Opening ports 80 and 443 in the OS firewall..."
+  for p in 80 443; do
+    iptables -C INPUT -p tcp -m state --state NEW -m tcp --dport "$p" -j ACCEPT 2>/dev/null || \
+      iptables -I INPUT 1 -p tcp -m state --state NEW -m tcp --dport "$p" -j ACCEPT
+  done
+  if command -v netfilter-persistent >/dev/null 2>&1; then netfilter-persistent save; fi
+fi
+
 cat > /etc/caddy/Caddyfile << CADDY
 $DOMAIN {
 	reverse_proxy 127.0.0.1:8080
@@ -90,7 +101,8 @@ if [ -n "$OK" ]; then
   echo "=================== RELAY IS RUNNING ==================="
 else
   echo "Relay installed, but HTTPS isn't answering yet."
-  echo "Check ports 80 and 443 are open in the Lightsail firewall, then run:"
+  echo "Check ports 80 and 443 are open in the cloud firewall"
+  echo "(Oracle: VCN Security List ingress rules; Lightsail: Networking tab), then run:"
   echo "  sudo systemctl restart caddy && curl https://$DOMAIN/health"
   echo "========================================================"
 fi
