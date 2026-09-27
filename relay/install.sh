@@ -11,6 +11,17 @@ REPO_RAW="https://raw.githubusercontent.com/robbiebaskin/sixbricks/main/relay"
 IP="$(curl -fsS https://checkip.amazonaws.com | tr -d '[:space:]')"
 DOMAIN="${DOMAIN:-${IP//./-}.sslip.io}"
 
+command -v apt-get >/dev/null 2>&1 || { echo "This installer needs Ubuntu/Debian (apt-get not found)."; exit 1; }
+CADDY_PREEXISTING=""; command -v caddy >/dev/null 2>&1 && CADDY_PREEXISTING=1
+# Don't break an existing web server on this machine
+BUSY="$(ss -ltnpH 2>/dev/null | grep -E ':(80|443)[[:space:]]' | grep -v caddy || true)"
+if [ -n "$BUSY" ]; then
+  echo "Another program is already using port 80 or 443 on this server:"
+  echo "$BUSY"
+  echo "Stopping here so it isn't disrupted. Share this output and the setup can be adapted."
+  exit 1
+fi
+
 echo "== Six Bricks relay installer =="
 echo "Public IP:     $IP"
 echo "Relay address: https://$DOMAIN"
@@ -77,11 +88,19 @@ if iptables -S INPUT 2>/dev/null | grep -q -- '-j REJECT'; then
   if command -v netfilter-persistent >/dev/null 2>&1; then netfilter-persistent save; fi
 fi
 
-cat > /etc/caddy/Caddyfile << CADDY
+SITE_BLOCK="# sixbricks-relay
 $DOMAIN {
 	reverse_proxy 127.0.0.1:8080
-}
-CADDY
+}"
+if [ -n "$CADDY_PREEXISTING" ] && [ -f /etc/caddy/Caddyfile ]; then
+  if ! grep -q "sixbricks-relay" /etc/caddy/Caddyfile; then
+    cp /etc/caddy/Caddyfile "/etc/caddy/Caddyfile.bak.$(date +%s)"
+    printf '\n%s\n' "$SITE_BLOCK" >> /etc/caddy/Caddyfile   # keep existing sites
+  fi
+  caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile || { echo "Caddy config invalid - restore the .bak file"; exit 1; }
+else
+  printf '%s\n' "$SITE_BLOCK" > /etc/caddy/Caddyfile
+fi
 
 systemctl daemon-reload
 systemctl enable --now sixbricks-relay
