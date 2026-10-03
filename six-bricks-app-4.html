@@ -150,6 +150,10 @@
   .q-item b:last-child{font-variant-numeric:tabular-nums;white-space:nowrap}
   select{font:inherit;padding:12px;border:1px solid var(--line);border-radius:10px;background:#fff;color:var(--ink);min-height:46px;width:100%}
   select:focus{outline:2px solid var(--blue);outline-offset:1px;border-color:var(--blue)}
+  /* iOS Safari gives date inputs an intrinsic min width that overflows their container */
+  .field{min-width:0}
+  input[type=date]{-webkit-appearance:none;appearance:none;display:block;min-width:0;max-width:100%}
+  input[type=date]::-webkit-date-and-time-value{text-align:left}
   .exgst{display:none}
   body.wholesale .exgst{display:inline}
   .misc-fields{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:5px}
