@@ -148,6 +148,10 @@
   .q-item{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:11px 10px;border:1px solid var(--line);border-radius:10px;cursor:pointer;margin-top:6px}
   .q-item.on{border-color:var(--blue);background:#eef7fc}
   .q-item b:last-child{font-variant-numeric:tabular-nums;white-space:nowrap}
+  select{font:inherit;padding:12px;border:1px solid var(--line);border-radius:10px;background:#fff;color:var(--ink);min-height:46px;width:100%}
+  select:focus{outline:2px solid var(--blue);outline-offset:1px;border-color:var(--blue)}
+  .exgst{display:none}
+  body.wholesale .exgst{display:inline}
   .misc-fields{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:5px}
   .misc-desc{flex:1 1 150px;min-width:130px;min-height:38px;padding:6px 10px;font-size:.9rem;border:1px solid var(--line);border-radius:10px;font-family:inherit;color:var(--ink)}
   .money-input.mini{max-width:110px;margin-top:0}
@@ -213,6 +217,13 @@
       <div class="field"><label for="cPhone">Phone</label><input type="tel" id="cPhone" autocomplete="off"></div>
       <div class="field"><label for="cEmail">Email</label><input type="email" id="cEmail" autocomplete="off" autocapitalize="none"></div>
       <div class="field"><label for="cCompany">Company</label><input type="text" id="cCompany" autocomplete="off"></div>
+      <div class="field"><label for="cDate">Date</label><input type="date" id="cDate"></div>
+      <div class="field"><label for="cType">Customer type</label>
+        <select id="cType">
+          <option value="Retailer">Retailer</option>
+          <option value="Wholesaler">Wholesaler (prices ex GST)</option>
+        </select>
+      </div>
       <div class="field full"><label for="cAddress">Street address</label>
         <input type="text" id="cAddress" autocomplete="off" placeholder="e.g. 12 Smith St">
       </div>
@@ -222,13 +233,12 @@
           <div class="ac-list" id="acList" hidden></div>
         </div>
       </div>
-      <div class="field"><label>Payment method</label>
+      <div class="field full"><label>Payment method</label>
         <div class="seg" id="paySeg">
           <button type="button" data-v="Bank Transfer">Bank transfer</button>
           <button type="button" data-v="Credit Card">Credit card</button>
         </div>
       </div>
-      <div class="field"><label for="cDate">Date</label><input type="date" id="cDate"></div>
     </div>
   </section>
 
@@ -290,7 +300,7 @@
   <div class="bar-inner">
     <div class="totals">
       <div class="t"><label>Subtotal</label><div id="tSub">$0.00</div></div>
-      <div class="t"><label>GST incl.</label><div id="tGst">$0.00</div></div>
+      <div class="t"><label id="tGstLbl">GST incl.</label><div id="tGst">$0.00</div></div>
       <div class="t big"><label>Total</label><div id="tTotal">$0.00</div></div>
     </div>
     <button class="btn btn-primary" id="btnPdf2" type="button">Create invoice</button>
@@ -453,9 +463,11 @@ function calc(){
   const setBase = r2(setGross*(1-expoPct/100));            // set value net of the expo discount
   const setAmt  = r2(setBase*setPct/100);                  // set discount on that net figure
   const customAmt = num($("customAmt").value);             // flat dollar discount, applied last
-  const total = Math.max(0, r2(sub - setAmt - expoAmt - customAmt + shipping));
-  const gst = r2(total/11);
-  return {sub, shipping, expoPct, expoAmt, setPct, setAmt, setBase, sets, customAmt, total, gst};
+  const net = Math.max(0, r2(sub - setAmt - expoAmt - customAmt + shipping));
+  const wholesale = $("cType").value === "Wholesaler";
+  const gst = wholesale ? r2(net*0.10) : r2(net/11);       // wholesale: GST added on top; retail: GST included
+  const total = wholesale ? r2(net + gst) : net;
+  return {sub, shipping, expoPct, expoAmt, setPct, setAmt, setBase, sets, customAmt, wholesale, net, total, gst};
 }
 function refreshTotals(){
   const t=calc();
@@ -466,13 +478,21 @@ function refreshTotals(){
   $("setHint").textContent = t.sets.length
     ? "Complete sets in this order: "+t.sets.join(", ")
     : "No complete sets yet — every item in a set must be ordered to qualify";
-  const rows=[["Subtotal",fmt.format(t.sub),""]];
+  document.body.classList.toggle("wholesale", t.wholesale);
+  $("tGstLbl").textContent = t.wholesale ? "GST (10%)" : "GST incl.";
+  const rows=[[t.wholesale?"Subtotal (ex GST)":"Subtotal",fmt.format(t.sub),""]];
   if(t.expoAmt>0) rows.push([`Expo discount (${t.expoPct}%)`,"-"+fmt.format(t.expoAmt),"neg"]);
   if(t.setAmt>0)  rows.push([`Set discount (${t.setPct}% of ${fmt.format(t.setBase)})`,"-"+fmt.format(t.setAmt),"neg"]);
   if(t.customAmt>0) rows.push(["Custom discount","-"+fmt.format(t.customAmt),"neg"]);
   rows.push(["Shipping",fmt.format(t.shipping),""]);
-  rows.push(["Total",fmt.format(t.total),"big"]);
-  rows.push(["GST incl.",fmt.format(t.gst),"mut"]);
+  if(t.wholesale){
+    rows.push(["Total ex GST",fmt.format(t.net),""]);
+    rows.push(["GST (10%)",fmt.format(t.gst),""]);
+    rows.push(["Total inc GST",fmt.format(t.total),"big"]);
+  }else{
+    rows.push(["Total",fmt.format(t.total),"big"]);
+    rows.push(["GST incl.",fmt.format(t.gst),"mut"]);
+  }
   $("breakdown").innerHTML = rows.map(([k,v,c])=>`<div class="brow ${c}"><span>${k}</span><span>${v}</span></div>`).join("");
 }
 
@@ -496,7 +516,7 @@ function buildProducts(){
                  <input type="text" class="misc-desc" id="md${i}" autocomplete="off" placeholder="Description">
                  <div class="money-input mini"><span>$</span><input type="number" id="mp${i}" inputmode="decimal" min="0" step="0.01" placeholder="0.00"></div>
                </div>`
-            : `<div class="punit">${fmt.format(p.price)} each</div>`}
+            : `<div class="punit">${fmt.format(p.price)} each<span class="exgst"> ex GST</span></div>`}
         </div>
         <div class="controls">
           <div class="ts">
@@ -559,7 +579,7 @@ function snapshotFromForm(no){
     date:$("cDate").value||todayISO(),
     customer:{
       name:$("cName").value, phone:$("cPhone").value, email:$("cEmail").value,
-      company:$("cCompany").value, address:$("cAddress").value, suburb:$("cSuburb").value, pay:payMethod
+      company:$("cCompany").value, type:$("cType").value, address:$("cAddress").value, suburb:$("cSuburb").value, pay:payMethod
     },
     items,
     totals:t
@@ -605,7 +625,7 @@ function buildPdf(o){
   /* customer block */
   let y=92;
   doc.setDrawColor(...LINE); doc.setLineWidth(1);
-  doc.roundedRect(M,y,W-2*M,72,6,6,"S");
+  doc.roundedRect(M,y,W-2*M,90,6,6,"S");
   const cx1=M+12, cx2=M+(W-2*M)/2+6;
   doc.setFontSize(9.5);
   const c=o.customer||{};
@@ -619,11 +639,12 @@ function buildPdf(o){
   line(cx2,y+18,"Phone",    c.phone);
   line(cx2,y+36,"Company",  c.company);
   line(cx2,y+54,"Payment",  c.pay);
+  line(cx1,y+72,"Type",     c.type||"Retailer");
 
   /* items table */
   doc.autoTable({
-    startY:y+86, margin:{left:M,right:M},
-    head:[["Product","Qty","Take/Ship","Unit price","Line total"]],
+    startY:y+104, margin:{left:M,right:M},
+    head:[["Product","Qty","Take/Ship",t.wholesale?"Unit ex GST":"Unit price",t.wholesale?"Total ex GST":"Line total"]],
     body:o.items.map(x=>[x.name,String(x.qty),x.fulfil==="T"?"Take":x.fulfil==="S"?"Ship":"—",fmt.format(x.price),fmt.format(x.price*x.qty)]),
     theme:"grid",
     styles:{font:"helvetica",fontSize:9.5,textColor:INK,lineColor:LINE,lineWidth:.6,cellPadding:6},
@@ -647,15 +668,21 @@ function buildPdf(o){
     doc.text(k,tx,ty); doc.text(v,W-M,ty,{align:"right"});
     ty+=bold?20:16;
   };
-  trow("Subtotal",fmt.format(t.sub));
+  trow(t.wholesale?"Subtotal (ex GST)":"Subtotal",fmt.format(t.sub));
   if(t.expoAmt>0) trow(`Expo discount (${t.expoPct}%)`,"-"+fmt.format(t.expoAmt));
   if(t.setAmt>0)  trow(`Set discount (${t.setPct}%)`,"-"+fmt.format(t.setAmt));
   if(t.customAmt>0) trow("Custom discount","-"+fmt.format(t.customAmt));
   if(t.legacyDiscount>0) trow("Discount","-"+fmt.format(t.legacyDiscount));
   trow("Shipping",fmt.format(t.shipping));
   doc.setDrawColor(...LINE); doc.line(tx,ty-10,W-M,ty-10); ty+=2;
-  trow("TOTAL",fmt.format(t.total),true,BLUE);
-  trow("GST incl.",fmt.format(t.gst),false,MUT);
+  if(t.wholesale){
+    trow("Total ex GST",fmt.format(t.net));
+    trow("GST (10%)",fmt.format(t.gst));
+    trow("TOTAL inc GST",fmt.format(t.total),true,BLUE);
+  }else{
+    trow("TOTAL",fmt.format(t.total),true,BLUE);
+    trow("GST incl.",fmt.format(t.gst),false,MUT);
+  }
 
   /* payment + signature */
   let py=Math.max(ty+22, 700);
@@ -827,6 +854,7 @@ function loadOrder(n){
   $("cAddress").value=c.address||""; $("cSuburb").value=c.suburb||""; $("cDate").value=o.date||todayISO();
   payMethod=c.pay||"";
   $("paySeg").querySelectorAll("button").forEach(x=>x.classList.toggle("on",x.dataset.v===payMethod));
+  $("cType").value = c.type==="Wholesaler" ? "Wholesaler" : "Retailer";
   o.items.forEach(it=>{
     const i=it.misc ? PRODUCTS.findIndex(p=>p.editable) : PRODUCTS.findIndex(p=>p.name===it.name);
     if(i>=0){
@@ -863,6 +891,7 @@ async function deleteOrder(n){
 function resetForm(scroll=true){
   ["cName","cPhone","cEmail","cCompany","cAddress","cSuburb","shipping","expoPct","setPct","customAmt"].forEach(id=>$(id).value="");
   $("cDate").value=todayISO();
+  $("cType").value="Retailer";
   payMethod="";
   $("paySeg").querySelectorAll("button").forEach(x=>x.classList.remove("on"));
   qty.fill(0); fulfil.fill("");
@@ -1092,6 +1121,7 @@ $("shipping").addEventListener("input",refreshTotals);
 $("expoPct").addEventListener("input",refreshTotals);
 $("setPct").addEventListener("input",refreshTotals);
 $("customAmt").addEventListener("input",refreshTotals);
+$("cType").addEventListener("change",refreshTotals);
 $("btnQuote").addEventListener("click",getQuotes);
 prefillParcel();
 $("btnPdf").addEventListener("click",createInvoice);
