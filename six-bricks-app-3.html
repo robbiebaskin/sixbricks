@@ -629,7 +629,7 @@ function buildPdf(o){
   /* customer block */
   let y=92;
   doc.setDrawColor(...LINE); doc.setLineWidth(1);
-  doc.roundedRect(M,y,W-2*M,90,6,6,"S");
+  doc.roundedRect(M,y,W-2*M,72,6,6,"S");
   const cx1=M+12, cx2=M+(W-2*M)/2+6;
   doc.setFontSize(9.5);
   const c=o.customer||{};
@@ -643,11 +643,10 @@ function buildPdf(o){
   line(cx2,y+18,"Phone",    c.phone);
   line(cx2,y+36,"Company",  c.company);
   line(cx2,y+54,"Payment",  c.pay);
-  line(cx1,y+72,"Type",     c.type||"Retailer");
 
   /* items table */
   doc.autoTable({
-    startY:y+104, margin:{left:M,right:M},
+    startY:y+86, margin:{left:M,right:M},
     head:[["Product","Qty","Take/Ship",t.wholesale?"Unit ex GST":"Unit price",t.wholesale?"Total ex GST":"Line total"]],
     body:o.items.map(x=>[x.name,String(x.qty),x.fulfil==="T"?"Take":x.fulfil==="S"?"Ship":"—",fmt.format(x.price),fmt.format(x.price*x.qty)]),
     theme:"grid",
