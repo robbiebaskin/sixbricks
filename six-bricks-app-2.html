@@ -706,20 +706,10 @@ function buildPdf(o){
   return doc;
 }
 
-async function deliverPdf(doc, fname){
-  try{
-    const blob=doc.output("blob");
-    const file=new File([blob], fname, {type:"application/pdf"});
-    if(navigator.canShare && navigator.canShare({files:[file]})){
-      await navigator.share({files:[file]});   // iOS share sheet -> Save to Files (no title: iOS saves it as a stray .txt)
-      return "shared";
-    }
-  }catch(e){
-    if(e && e.name==="AbortError") return "cancelled";
-    /* fall through to plain download */
-  }
-  try{ doc.save(fname); return "saved"; }
-  catch(e){ return "failed"; }
+/* Share sheet must open in the same instant as the tap (iPad Safari is strict about this),
+   so the PDF File is prepared in advance and nothing is awaited before navigator.share. */
+function makePdfFile(doc, fname){
+  return new File([doc.output("blob")], fname, {type:"application/pdf"});
 }
 
 async function createInvoice(){
@@ -819,7 +809,8 @@ async function openViewer(doc, fname, n, email){
     <div class="viewer-body"></div>`;
   document.body.appendChild(ov);
   ov.querySelector('[data-v="close"]').addEventListener("click",()=>ov.remove());
-  ov.querySelector('[data-v="email"]').addEventListener("click",()=>{ emailInvoice(doc,fname,n,email); });
+  const pdfFile = makePdfFile(doc, fname);   // ready before any tap
+  ov.querySelector('[data-v="email"]').addEventListener("click",()=>{ emailInvoice(pdfFile,n,email); });
   const body=ov.querySelector(".viewer-body");
   try{
     await loadPdfJs();
@@ -1022,17 +1013,25 @@ async function guardCounter(){
     }
   }catch(e){ /* offline — local counter stands */ }
 }
-async function emailInvoice(doc, fname, n, email){
+function emailInvoice(file, n, email){
   /* Web apps can't open Mail with attachment + recipient together, so:
-     copy the address, open the share sheet with the PDF, user picks Mail and pastes. */
+     copy the address, open the share sheet with the PDF, user picks Mail and pastes.
+     Both calls happen synchronously inside the tap — no awaits before share(). */
   const to=(email||"").trim();
-  if(to){
-    try{ await navigator.clipboard.writeText(to); toast(to+" copied \u2014 choose Mail in the share sheet, then paste into To"); }
-    catch(e){ toast("Choose Mail in the share sheet \u2014 send to "+to); }
-  }else{
-    toast("No email on this invoice \u2014 choose Mail in the share sheet");
+  if(to && navigator.clipboard && navigator.clipboard.writeText){
+    navigator.clipboard.writeText(to).catch(()=>{});
   }
-  deliverPdf(doc,fname);
+  if(!(navigator.canShare && navigator.canShare({files:[file]}))){
+    toast("This device can't share files from the browser"); return;
+  }
+  let p;
+  try{ p=navigator.share({files:[file]}); }   // no title: iOS would save it as a stray .txt
+  catch(e){ p=Promise.reject(e); }
+  toast(to ? to+" copied \u2014 choose Mail, then paste into To" : "No email on this invoice \u2014 choose Mail in the share sheet");
+  p.catch(e=>{
+    if(e && e.name==="AbortError") return;      // user closed the share sheet
+    toast("Couldn't open the share sheet ("+((e&&e.name)||"error")+") \u2014 tap Email again");
+  });
 }
 async function restoreFromSheet(){
   const key=ensureSyncKey(); if(!key){ toast("Sync key needed to restore"); return; }
