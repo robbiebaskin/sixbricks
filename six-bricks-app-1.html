@@ -156,6 +156,10 @@
   input[type=date]::-webkit-date-and-time-value{text-align:left}
   .exgst{display:none}
   body.wholesale .exgst{display:inline}
+  .disc-row .misc-desc{flex:1 1 180px}
+  .money-input.neg span{left:8px}
+  .money-input.neg input{padding-left:30px}
+  .ltotal.neg,.brow.neg span:last-child{color:var(--red)}
   .misc-fields{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:5px}
   .misc-desc{flex:1 1 150px;min-width:130px;min-height:38px;padding:6px 10px;font-size:.9rem;border:1px solid var(--line);border-radius:10px;font-family:inherit;color:var(--ink)}
   .money-input.mini{max-width:110px;margin-top:0}
@@ -250,7 +254,7 @@
   <section class="card">
     <h2><span class="dot" style="background:var(--yellow)"></span>Products</h2>
     <div id="productList"></div>
-    <div class="prod-subtotal"><span>Products subtotal</span><b id="prodSub">$0.00</b></div>
+    <div class="prod-subtotal"><span>Subtotal</span><b id="prodSub">$0.00</b></div>
   </section>
 
   <!-- Charges -->
@@ -386,6 +390,8 @@ let payMethod = "";
 let invoiceNo = START_NO;
 let store = null;          // {counter, orders:[]}
 let editingNo = null;      // invoice currently open in the form (created or loaded)
+const DISC_LINES = 3;
+let discLines = Array.from({length:DISC_LINES}, ()=>({desc:"", amt:0}));   // flat $ discount rows
 const STORAGE_KEY = "sixbricks-orders-app"+APP_ID;
 const fmt = new Intl.NumberFormat("en-AU",{style:"currency",currency:"AUD"});
 
@@ -467,16 +473,18 @@ function calc(){
   const setBase = r2(setGross*(1-expoPct/100));            // set value net of the expo discount
   const setAmt  = r2(setBase*setPct/100);                  // set discount on that net figure
   const customAmt = num($("customAmt").value);             // flat dollar discount, applied last
-  const net = Math.max(0, r2(sub - setAmt - expoAmt - customAmt + shipping));
+  const lineDisc = r2(discLines.reduce((s,d)=>s+d.amt,0));   // flat $ discount rows
+  const subNet = r2(sub - lineDisc);                          // what the items table adds up to
+  const net = Math.max(0, r2(sub - lineDisc - setAmt - expoAmt - customAmt + shipping));
   const wholesale = $("cType").value === "Wholesaler";
   const gst = wholesale ? r2(net*0.10) : r2(net/11);       // wholesale: GST added on top; retail: GST included
   const total = wholesale ? r2(net + gst) : net;
-  return {sub, shipping, expoPct, expoAmt, setPct, setAmt, setBase, sets, customAmt, wholesale, net, total, gst};
+  return {sub, lineDisc, subNet, shipping, expoPct, expoAmt, setPct, setAmt, setBase, sets, customAmt, wholesale, net, total, gst};
 }
 function refreshTotals(){
   const t=calc();
-  $("prodSub").textContent = fmt.format(t.sub);
-  $("tSub").textContent    = fmt.format(t.sub);
+  $("prodSub").textContent = fmt.format(t.subNet);
+  $("tSub").textContent    = fmt.format(t.subNet);
   $("tGst").textContent    = fmt.format(t.gst);
   $("tTotal").textContent  = fmt.format(t.total);
   $("setHint").textContent = t.sets.length
@@ -484,7 +492,7 @@ function refreshTotals(){
     : "No complete sets yet — every item in a set must be ordered to qualify";
   document.body.classList.toggle("wholesale", t.wholesale);
   $("tGstLbl").textContent = t.wholesale ? "GST (10%)" : "GST incl.";
-  const rows=[[t.wholesale?"Subtotal (ex GST)":"Subtotal",fmt.format(t.sub),""]];
+  const rows=[[t.wholesale?"Subtotal (ex GST)":"Subtotal",fmt.format(t.subNet),""]];
   if(t.expoAmt>0) rows.push([`Expo discount (${t.expoPct}%)`,"-"+fmt.format(t.expoAmt),"neg"]);
   if(t.setAmt>0)  rows.push([`Set discount (${t.setPct}% of ${fmt.format(t.setBase)})`,"-"+fmt.format(t.setAmt),"neg"]);
   if(t.customAmt>0) rows.push(["Custom discount","-"+fmt.format(t.customAmt),"neg"]);
@@ -551,6 +559,33 @@ function buildProducts(){
     }
     paintRow(i);
   });
+  buildDiscounts(host);
+}
+function buildDiscounts(host){
+  const wrap=document.createElement("div"); wrap.className="cat";
+  wrap.innerHTML='<div class="cat-head"><span class="dot" style="background:var(--red)"></span>Discounts</div>'+
+    discLines.map((_,j)=>`
+      <div class="row disc-row">
+        <input type="text" class="misc-desc" id="dd${j}" autocomplete="off" placeholder="Description">
+        <div class="money-input mini neg"><span>\u2212$</span><input type="number" id="da${j}" inputmode="decimal" min="0" step="0.01" placeholder="0.00"></div>
+        <div class="ltotal neg" id="dl${j}"></div>
+      </div>`).join("");
+  host.appendChild(wrap);
+  discLines.forEach((_,j)=>{
+    $("dd"+j).addEventListener("input",()=>{ discLines[j].desc=$("dd"+j).value.trim(); });
+    $("da"+j).addEventListener("input",()=>{ discLines[j].amt=num($("da"+j).value); paintDisc(j); refreshTotals(); });
+  });
+}
+function paintDisc(j){
+  $("dl"+j).textContent = discLines[j].amt>0 ? "\u2212"+fmt.format(discLines[j].amt) : "";
+}
+function setDiscounts(list){
+  discLines.forEach((d,j)=>{
+    const s=(list||[])[j]||{};
+    d.desc=s.desc||""; d.amt=Number(s.amt)||0;
+    $("dd"+j).value=d.desc; $("da"+j).value=d.amt||"";
+    paintDisc(j);
+  });
 }
 function setQty(i,v){ qty[i]=v; paintRow(i); refreshTotals(); }
 function setFulfil(i,v){ fulfil[i]=(fulfil[i]===v)?"":v; paintRow(i); }
@@ -586,6 +621,7 @@ function snapshotFromForm(no){
       company:$("cCompany").value, type:$("cType").value, address:$("cAddress").value, suburb:$("cSuburb").value, pay:payMethod
     },
     items,
+    discounts: discLines.filter(d=>d.amt>0).map(d=>({desc:d.desc, amt:d.amt})),
     totals:t
   };
 }
@@ -648,7 +684,11 @@ function buildPdf(o){
   doc.autoTable({
     startY:y+86, margin:{left:M,right:M},
     head:[["Product","Qty","Take/Ship",t.wholesale?"Unit ex GST":"Unit price",t.wholesale?"Total ex GST":"Line total"]],
-    body:o.items.map(x=>[x.name,String(x.qty),x.fulfil==="T"?"Take":x.fulfil==="S"?"Ship":"—",fmt.format(x.price),fmt.format(x.price*x.qty)]),
+    body:o.items.map(x=>[x.name,String(x.qty),x.fulfil==="T"?"Take":x.fulfil==="S"?"Ship":"—",fmt.format(x.price),fmt.format(x.price*x.qty)])
+      .concat((o.discounts||[]).map(d=>[
+        {content:d.desc||"Discount", styles:{textColor:[180,40,30]}}, "", "", "",
+        {content:"-"+fmt.format(d.amt), styles:{textColor:[180,40,30]}}
+      ])),
     theme:"grid",
     styles:{font:"helvetica",fontSize:9.5,textColor:INK,lineColor:LINE,lineWidth:.6,cellPadding:6},
     headStyles:{fillColor:BLUE,textColor:[255,255,255],fontStyle:"bold"},
@@ -671,7 +711,7 @@ function buildPdf(o){
     doc.text(k,tx,ty); doc.text(v,W-M,ty,{align:"right"});
     ty+=bold?20:16;
   };
-  trow(t.wholesale?"Subtotal (ex GST)":"Subtotal",fmt.format(t.sub));
+  trow(t.wholesale?"Subtotal (ex GST)":"Subtotal",fmt.format(t.subNet!==undefined?t.subNet:t.sub));
   if(t.expoAmt>0) trow(`Expo discount (${t.expoPct}%)`,"-"+fmt.format(t.expoAmt));
   if(t.setAmt>0)  trow(`Set discount (${t.setPct}%)`,"-"+fmt.format(t.setAmt));
   if(t.customAmt>0) trow("Custom discount","-"+fmt.format(t.customAmt));
@@ -722,7 +762,7 @@ async function createInvoice(){
     if(idx>=0) store.orders[idx]=o; else store.orders.push(o);
     store.queue=store.queue||[];
     store.queue.push({uid:APP_ID+"-"+o.no+"-"+Date.now(), app:APP_ID, no:o.no, date:o.date,
-                      customer:o.customer, items:o.items, totals:o.totals});
+                      customer:o.customer, items:o.items, discounts:o.discounts, totals:o.totals});
     await saveStore();
     renderHistory();
     openViewer(buildPdf(o), `SixBricks_Invoice_${o.no}.pdf`, o.no, o.customer.email||"");
@@ -735,7 +775,7 @@ async function createInvoice(){
   store.orders.push(o);
   store.queue=store.queue||[];
   store.queue.push({uid:APP_ID+"-"+o.no+"-"+Date.now(), app:APP_ID, no:o.no, date:o.date,
-                    customer:o.customer, items:o.items, totals:o.totals});
+                    customer:o.customer, items:o.items, discounts:o.discounts, totals:o.totals});
   store.counter=invoiceNo+1;
   await saveStore();
   const issuedNo=o.no;
@@ -849,6 +889,7 @@ function loadOrder(n){
   payMethod=c.pay||"";
   $("paySeg").querySelectorAll("button").forEach(x=>x.classList.toggle("on",x.dataset.v===payMethod));
   $("cType").value = c.type==="Wholesaler" ? "Wholesaler" : "Retailer";
+  setDiscounts(o.discounts);
   o.items.forEach(it=>{
     const i=it.misc ? PRODUCTS.findIndex(p=>p.editable) : PRODUCTS.findIndex(p=>p.name===it.name);
     if(i>=0){
@@ -889,6 +930,7 @@ function resetForm(scroll=true){
   payMethod="";
   $("paySeg").querySelectorAll("button").forEach(x=>x.classList.remove("on"));
   qty.fill(0); fulfil.fill("");
+  setDiscounts([]);
   PRODUCTS.forEach((p,i)=>{ if(p.editable){
     p.price=0; p.desc="";
     const pe=$("mp"+i); if(pe) pe.value="";
@@ -1043,7 +1085,7 @@ async function restoreFromSheet(){
     const byNo=new Map();
     (d.orders||[]).forEach(o=>{
       const no=parseInt(String(o.no).replace(/[^0-9]/g,""),10)||o.no;
-      byNo.set(no,{no, date:o.date, customer:o.customer||{}, items:o.items||[], totals:o.totals||{}});
+      byNo.set(no,{no, date:o.date, customer:o.customer||{}, items:o.items||[], discounts:o.discounts||[], totals:o.totals||{}});
     });                                                                    // later rows win
     store.orders.forEach(o=>{ if(!byNo.has(o.no)) byNo.set(o.no,o); });    // keep local-only orders
     const restored=[...byNo.values()].sort((a,b)=>a.no-b.no);
